@@ -1,0 +1,4 @@
+Table customers [headercolor: #8B5CF6] {
+  id bigint [pk]
+  name varchar
+}

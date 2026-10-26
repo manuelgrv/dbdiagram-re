@@ -1,3 +1,4 @@
+import { compileWorkspace } from './dbml-project.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -38,13 +39,13 @@ export async function startStudio({ directory = process.cwd(), port = 4174, vers
         doc.state = state ?? { version: '3.0.0', darkMode: theme === 'dark', gridEnabling: false, currentViewName: null, defaultView: { detailLevel: 'All', relationshipMode: 'Dependency', tablePositions: [], tableGroupCollapseStates: [], stickyNoteLayouts: [], referencePaths: [] }, views: {} };
         return doc;
     }
-    async function body(req) {
+    async function body(req, limit = 3 * 1024 * 1024) {
         if (!req.headers['content-type']?.startsWith('application/json'))
             throw new WorkspaceError(415, 'Send JSON');
         let data = '';
         for await (const chunk of req) {
             data += chunk;
-            if (Buffer.byteLength(data) > 3 * 1024 * 1024)
+            if (Buffer.byteLength(data) > limit)
                 throw new WorkspaceError(413, 'Request is too large');
         }
         if (req.headers['x-workspace-token'] !== token) throw new WorkspaceError(409, 'Workspace changed. Reload before saving.');
@@ -115,16 +116,17 @@ export async function startStudio({ directory = process.cwd(), port = 4174, vers
                 return send(res, 201, document(created.path));
             }
             if (url.pathname === '/api/preview' && req.method === 'POST') {
-                const data = await body(req);
+                const data = await body(req, 16 * 1024 * 1024);
                 workspace.resolve(data.path);
                 if (typeof data.source !== 'string' || Buffer.byteLength(data.source) > 2 * 1024 * 1024)
                     throw new WorkspaceError(413, 'DBML files must be smaller than 2 MB');
                 let database = {}, diagramViews = [], errors = [];
                 try {
-                    ({ database, diagramViews } = runtime.compile(data.source));
+                    ({ database, diagramViews } = compileWorkspace(runtime, workspace, data.path, data.source, data.buffers));
                 }
                 catch (error) {
-                    errors = (error.diags ?? [{ message: error.message }]).map(e => ({ message: e.message ?? e.diagnostic ?? String(e), startLine: e.location?.start?.line ?? 1, startColumn: e.location?.start?.column ?? 1, endLine: e.location?.end?.line ?? 1, endColumn: e.location?.end?.column ?? 1 }));
+                    if (error instanceof WorkspaceError) throw error;
+                    errors = (error.diags ?? [{ message: error.message }]).map(e => ({ path: e.path ?? data.path, message: e.message ?? e.diagnostic ?? String(e), startLine: e.location?.start?.line ?? 1, startColumn: e.location?.start?.column ?? 1, endLine: e.location?.end?.line ?? 1, endColumn: e.location?.end?.column ?? 1 }));
                 }
                 return send(res, 200, { path: data.path, requestId: data.requestId, update: { type: 'update', database, diagramViews: diagramViews ?? [], errors, dbmlSource: data.source }, stats: { tables: Object.keys(database.tables ?? {}).length, lineage: Object.keys(database.depEdges ?? {}).length, relationships: Object.keys(database.refs ?? {}).length } });
             }

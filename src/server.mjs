@@ -1,3 +1,5 @@
+import { Workspace } from './workspace.mjs';
+import { compileFile, projectRootForFile } from './dbml-project.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -24,11 +26,11 @@ export async function startViewer({file,port=4173,version='0.4.0',theme='dark',l
   const fileId=crypto.createHash('sha256').update(file).digest('hex').slice(0,20);
   // Capabilities of this read-only local host, independent of account services.
   const features={darkMode:true,colorHeader:true,colorPicker:false,dragAndDrop:true,tableGroup:true,detailLevelsEnabled:true,stickyNote:true,tableSearch:true,diagramView:true,diagramViewDropdown:true,diagramViewRestricted:false,tableRename:false,dbmlEditEnabled:false,relationshipModeEnabled:true};
-  let snapshot,revision=0,timer,watcher;const clients=new Set();
+  let snapshot,revision=0,timer,watcher,poll;const clients=new Set();
   function refresh(){
     let source='',database={},diagramViews=[],errors=[];
-    try {source=fs.readFileSync(file,'utf8');({database,diagramViews}=runtime.compile(source));}
-    catch(error){errors=(error.diags??[{message:error.message,location:{start:{line:1,column:1},end:{line:1,column:1}}}]).map(e=>({message:e.message??e.diagnostic??String(e),startLine:e.location?.start?.line??1,startColumn:e.location?.start?.column??1,endLine:e.location?.end?.line??1,endColumn:e.location?.end?.column??1}));}
+    try {source=fs.readFileSync(file,'utf8');({database,diagramViews}=compileFile(file, runtime));}
+    catch(error){errors=(error.diags??[{message:error.message,location:{start:{line:1,column:1},end:{line:1,column:1}}}]).map(e=>({path:e.path,message:e.message??e.diagnostic??String(e),startLine:e.location?.start?.line??1,startColumn:e.location?.start?.column??1,endLine:e.location?.end?.line??1,endColumn:e.location?.end?.column??1}));}
     snapshot={revision:++revision,fileId,filename:path.basename(file),rendererVersion:version,theme,links,state:layout,features,update:{type:'update',database,diagramViews:diagramViews??[],errors,dbmlSource:source}};
     for(const client of clients)client.write('data: '+JSON.stringify(snapshot)+'\n\n');
     return snapshot;
@@ -65,8 +67,16 @@ export async function startViewer({file,port=4173,version='0.4.0',theme='dark',l
     }catch(error){return send(res,500,error.message);}
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
-  if(watch)watcher=fs.watch(path.dirname(file),(_event,name)=>{if(name?.toString()===path.basename(file)){clearTimeout(timer);timer=setTimeout(refresh,150);}});
+  if(watch){
+    const root=projectRootForFile(file);
+    const signature=()=>{try{return new Workspace(root).files().files.map(entry=>{const stat=fs.statSync(path.join(root,entry.path));return entry.path+':'+stat.size+':'+stat.mtimeMs+':'+stat.ctimeMs+':'+stat.ino;}).join('\n');}catch(error){return 'error:'+error.message;}};
+    let previous=signature();
+    const check=()=>{const next=signature();if(next!==previous){previous=next;refresh();}};
+    watcher=fs.watch(root,{recursive:true},(_event,name)=>{if(/\.dbml$/i.test(name?.toString()??'')){clearTimeout(timer);timer=setTimeout(check,150);}});
+    // Native recursive watchers can miss writes during registration or atomic replacements.
+    poll=setInterval(check,750);poll.unref();
+  }
   const heartbeat=setInterval(()=>{for(const client of clients)client.write(': heartbeat\n\n');},15000);heartbeat.unref();
   return {server,url:`http://127.0.0.1:${server.address().port}`,refresh,getSnapshot:()=>snapshot,
-    async close(){clearInterval(heartbeat);clearTimeout(timer);watcher?.close();for(const client of clients)client.end();clients.clear();await new Promise(resolve=>server.close(resolve));}};
+    async close(){clearInterval(heartbeat);clearInterval(poll);clearTimeout(timer);watcher?.close();for(const client of clients)client.end();clients.clear();await new Promise(resolve=>server.close(resolve));}};
 }

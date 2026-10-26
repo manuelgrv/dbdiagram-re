@@ -1,0 +1,15 @@
+// Open this entrypoint to render the combined module diagram.
+use { table sales.orders as orders } from './sales/orders'
+use * from './common/index.dbml'
+
+Table reporting.customer_totals [headercolor: #10B981] {
+  customer_id bigint [pk]
+  total_amount decimal(14,2)
+}
+
+Ref: orders.customer_id > customers.id
+Dep: orders -> reporting.customer_totals
+Dep customer_totals {
+  orders.customer_id -> reporting.customer_totals.customer_id
+  orders.amount -> reporting.customer_totals.total_amount
+}

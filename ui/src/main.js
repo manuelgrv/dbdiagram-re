@@ -30,7 +30,7 @@ async function api(url, options = {}) { if (workspaceStale && url !== '/api/work
 } return value; }
 monaco.languages.register({ id: 'dbml' });
 monaco.languages.setLanguageConfiguration('dbml', { comments: { lineComment: '//', blockComment: ['/*', '*/'] }, brackets: [['{', '}'], ['[', ']'], ['(', ')']], autoClosingPairs: [{ open: '{', close: '}' }, { open: '[', close: ']' }, { open: '(', close: ')' }, { open: "'", close: "'" }, { open: '"', close: '"' }] });
-monaco.languages.setMonarchTokensProvider('dbml', { keywords: ['Table', 'Ref', 'Dep', 'Project', 'TableGroup', 'Enum', 'Note', 'Indexes', 'Records', 'TablePartial', 'DiagramView', 'pk', 'primary', 'key', 'unique', 'null', 'not', 'increment', 'default', 'note', 'headercolor', 'color', 'indexes', 'as'], tokenizer: { root: [[/\/\/.*$/, 'comment'], [/\/\*/, 'comment', '@comment'], [/'{3}/, 'string', '@multiline'], [/'/, 'string', '@single'], [/"/, 'string', '@double'], [/#[0-9a-fA-F]{3,8}\b/, 'number.hex'], [/\b\d+(\.\d+)?\b/, 'number'], [/[a-zA-Z_$][\w$]*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }], [/[{}\[\]()]/, '@brackets'], [/[-<>:=.,]/, 'delimiter']], comment: [[/[^/*]+/, 'comment'], [/\*\//, 'comment', '@pop'], [/[/*]/, 'comment']], multiline: [[/'{3}/, 'string', '@pop'], [/./, 'string']], single: [[/\\./, 'string.escape'], [/'/, 'string', '@pop'], [/[^'\\]+/, 'string']], double: [[/\\./, 'string.escape'], [/"/, 'string', '@pop'], [/[^"\\]+/, 'string']] } });
+monaco.languages.setMonarchTokensProvider('dbml', { keywords: ['Table', 'Ref', 'Dep', 'Project', 'TableGroup', 'Enum', 'Note', 'Indexes', 'Records', 'TablePartial', 'DiagramView', 'use', 'reuse', 'from', 'pk', 'primary', 'key', 'unique', 'null', 'not', 'increment', 'default', 'note', 'headercolor', 'color', 'indexes', 'as'], tokenizer: { root: [[/\/\/.*$/, 'comment'], [/\/\*/, 'comment', '@comment'], [/'{3}/, 'string', '@multiline'], [/'/, 'string', '@single'], [/"/, 'string', '@double'], [/#[0-9a-fA-F]{3,8}\b/, 'number.hex'], [/\b\d+(\.\d+)?\b/, 'number'], [/[a-zA-Z_$][\w$]*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }], [/[{}\[\]()]/, '@brackets'], [/[-<>:=.,]/, 'delimiter']], comment: [[/[^/*]+/, 'comment'], [/\*\//, 'comment', '@pop'], [/[/*]/, 'comment']], multiline: [[/'{3}/, 'string', '@pop'], [/./, 'string']], single: [[/\\./, 'string.escape'], [/'/, 'string', '@pop'], [/[^'\\]+/, 'string']], double: [[/\\./, 'string.escape'], [/"/, 'string', '@pop'], [/[^"\\]+/, 'string']] } });
 monaco.languages.registerCompletionItemProvider('dbml', { provideCompletionItems: () => ({ suggestions: [{ label: 'Table', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'Table ${1:table_name} {\n  ${2:id} bigint [pk]\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet }, { label: 'Dep', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'Dep: ${1:source_table} -> ${2:target_table}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet }, { label: 'Ref', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'Ref: ${1:child}.${2:parent_id} > ${3:parent}.${4:id}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet }] }) });
 monaco.editor.defineTheme('studio-dark', { base: 'vs-dark', inherit: true, rules: [{ token: 'keyword', foreground: '83DCC5' }, { token: 'string', foreground: 'D6B57A' }, { token: 'comment', foreground: '637286' }, { token: 'number', foreground: 'B5A0E3' }], colors: { 'editor.background': '#141B25', 'editor.foreground': '#D3DDE9', 'editorLineNumber.foreground': '#4D5B6F', 'editorLineNumber.activeForeground': '#ACBBCD', 'editor.lineHighlightBackground': '#1B2432', 'editor.selectionBackground': '#29483F', 'editorCursor.foreground': '#80DDC0', 'editorGutter.background': '#141B25' } });
 monaco.editor.defineTheme('studio-light', { base: 'vs', inherit: true, rules: [{ token: 'keyword', foreground: '087F65' }, { token: 'string', foreground: '97651C' }, { token: 'comment', foreground: '7F8A99' }, { token: 'number', foreground: '7954AD' }], colors: { 'editor.background': '#FFFFFF', 'editor.foreground': '#263449', 'editorLineNumber.foreground': '#B0B8C3', 'editorLineNumber.activeForeground': '#596B80', 'editor.lineHighlightBackground': '#F4F7F9', 'editor.selectionBackground': '#D7EEE6', 'editorCursor.foreground': '#087F65', 'editorGutter.background': '#FFFFFF' } });
@@ -190,7 +190,7 @@ function closeDocument(name) { const doc = documents.get(name); if (dirty(doc) &
 function schedulePreview(delay = 350) { previewSequence++; clearTimeout(previewTimer); previewTimer = setTimeout(preview, delay); $('preview-status').textContent = 'Updating…'; }
 async function preview() { const name = active, doc = documents.get(name); if (!doc)
     return; const requestId = ++previewSequence; try {
-    const result = await api('/api/preview', { method: 'POST', body: JSON.stringify({ path: name, source: doc.model.getValue(), requestId }) });
+    const result = await api('/api/preview', { method: 'POST', body: JSON.stringify({ path: name, source: doc.model.getValue(), buffers: [...documents.values()].filter(dirty).map(buffer => ({ path: buffer.path, source: buffer.model.getValue() })), requestId }) });
     if (requestId !== previewSequence || name !== active)
         return;
     doc.errors = result.update.errors;
@@ -225,7 +225,18 @@ else if (event.data?.type === 'studio:error')
 else if (event.data?.type === 'studio:reveal')
     reveal(event.data.startLine, event.data.startColumn); });
 function reveal(line, column = 1) { if (!panelVisibility.editor) { panelVisibility.editor = true; applyPanelVisibility(); } editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column }); if (panelVisibility.editor) editor.focus(); }
-function renderProblems(doc) { monaco.editor.setModelMarkers(doc.model, 'dbml', doc.errors.map(e => ({ message: e.message, severity: monaco.MarkerSeverity.Error, startLineNumber: Math.min(e.startLine, doc.model.getLineCount()), startColumn: e.startColumn, endLineNumber: Math.min(e.endLine, doc.model.getLineCount()), endColumn: Math.max(e.endColumn, e.startColumn + 1) }))); $('problems').hidden = !doc.errors.length; $('problem-count').textContent = `Problems (${doc.errors.length})`; $('problem-list').replaceChildren(...doc.errors.map(e => button(`Line ${e.startLine}:${e.startColumn}  ${e.message}`, () => reveal(e.startLine, e.startColumn), 'problem'))); }
+function renderProblems(doc) {
+    for (const target of documents.values()) {
+        const errors = doc.errors.filter(error => (error.path ?? doc.path) === target.path);
+        monaco.editor.setModelMarkers(target.model, 'dbml', errors.map(error => ({ message: error.message, severity: monaco.MarkerSeverity.Error, startLineNumber: Math.min(error.startLine, target.model.getLineCount()), startColumn: error.startColumn, endLineNumber: Math.min(error.endLine, target.model.getLineCount()), endColumn: Math.max(error.endColumn, error.startColumn + 1) })));
+    }
+    $('problems').hidden = !doc.errors.length;
+    $('problem-count').textContent = `Problems (${doc.errors.length})`;
+    $('problem-list').replaceChildren(...doc.errors.map(error => button(`${error.path ?? doc.path}:${error.startLine}:${error.startColumn}  ${error.message}`, async () => {
+        if (error.path && error.path !== active) await openFile(error.path);
+        reveal(error.startLine, error.startColumn);
+    }, 'problem')));
+}
 function renderConflict() { $('conflict').hidden = !documents.get(active)?.conflict; }
 async function saveDocument(overwrite = false) { const doc = documents.get(active); if (!doc || doc.saving)
     return; if (doc.conflict && !overwrite) {
@@ -295,6 +306,7 @@ async function externalChange(changed) { try {
                 message(error.message);
         }
     }
+    if (active) schedulePreview(0);
 }
 catch (error) {
     message(error.message);

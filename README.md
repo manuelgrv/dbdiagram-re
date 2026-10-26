@@ -10,7 +10,7 @@ npm run build
 npm run studio -- .. --port 4174
 ```
 
-Open `http://127.0.0.1:4174`. Pass any directory you want to work in instead of `..`. Use **Open folder** to choose a new workspace anywhere on your Mac, without restarting. Other operating systems show an absolute directory path field. The explorer shows the workspace root, expandable directories (including empty ones), and files, excluding hidden, generated, and vendor content. DBML files open in the editor; other filenames are visible but disabled. Each file is a separate diagram; directory discovery does not merge files.
+Open `http://127.0.0.1:4174`. Pass any directory you want to work in instead of `..`. Use **Open folder** to choose a new workspace anywhere on your Mac, without restarting. Other operating systems show an absolute directory path field. The explorer shows the workspace root, expandable directories (including empty ones), and files, excluding hidden, generated, and vendor content. DBML files open in the editor; other filenames are visible but disabled. Each open file is an entrypoint: files without imports remain independent, while `use`/`reuse` combine the modules imported by that entrypoint. Merely placing files together does not merge them.
 
 - Open files in tabs with independent undo history and cursor/scroll state.
 - Edit in Monaco with DBML highlighting, snippets, search, and clickable compiler diagnostics.
@@ -35,6 +35,23 @@ npm run studio -- /path/to/diagrams --dev --port 4174
 `studio` uses the built UI when `dist/studio/index.html` exists, otherwise starts Vite in middleware mode. Rebuild after changing frontend source when running production mode. See [studio architecture and behavior](docs/studio.md).
 
 The default target is **0.4.0**, the installed version with working lineage. **0.5.3** is also inspected when its directory remains available. No extension files are modified by these tools. Generated extracts stay under the ignored `artifacts/` directory.
+
+## DBML modules
+
+Use native DBML module syntax to build a diagram from several files:
+
+```dbml
+// main.dbml
+use * from './common/customers'
+use { table sales.orders as orders } from './sales/orders.dbml'
+Ref: orders.customer_id > customers.id
+```
+
+Paths are relative to the file containing the import, with `.dbml` optional. Nested imports, `../` within the selected workspace, selective imports, aliases, and `reuse` use the bundled parser's project API. Open the entrypoint (`main.dbml`) to render its combined model. `use` imports remain private to that file; `reuse` re-exports them. See `examples/modules/main.dbml` for a working lineage example.
+
+Select a workspace that contains the entrypoint and all imported files. Imports cannot read outside it or through escaping symlinks; hidden/vendor/generated paths remain excluded. Previews include unsaved buffers in open module tabs without saving them. Imported-file diagnostics show the source path and open that file when clicked. Changes to module files on disk refresh the entrypoint preview.
+
+CLI commands also support imports. Run them from the project root so parent-relative modules stay within the loaded source tree; for files outside the working directory, the entry file's directory becomes the root. The current bound is 2 MB per DBML file and 64 MB of total workspace DBML source.
 
 ## Portable macOS app
 

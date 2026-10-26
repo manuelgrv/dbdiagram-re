@@ -1,3 +1,4 @@
+import { compileFile } from './dbml-project.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
@@ -26,11 +27,39 @@ export function parserRuntime(version='0.4.0') {
   new vm.Script(bundle.host.slice(0,end)+`;globalThis.__parser=${recovered.parser.symbol};`,{filename:bundle.hostFile}).runInContext(ctx,{timeout:20000});
   const runtime={bundle, recovered,
     compile(source) {ctx.__source=source;return JSON.parse(new vm.Script('JSON.stringify((()=>{const parsed=__parser.parse(__source,"dbmlv2");return {database:parsed.normalize(),diagramViews:parsed.diagramViews};})())').runInContext(ctx,{timeout:10000}));},
+    compileProject(entry, sources) {
+      ctx.__projectEntry = entry;
+      ctx.__projectSources = sources;
+      let result;
+      try { result = new vm.Script(`(() => {
+        const parser = new __parser();
+        for (const [file, source] of __projectSources) parser.setDbmlSource(file, source);
+        // Core's public diagnostic conversion drops filenames. Retain the original
+        // project errors so diagnostics can point to the imported source file.
+        let projectErrors = [];
+        const interpret = parser.DBMLCompiler.interpretFile.bind(parser.DBMLCompiler);
+        parser.DBMLCompiler.interpretFile = file => {
+          const result = interpret(file);
+          projectErrors = result.getErrors();
+          return result;
+        };
+        try {
+          const parsed = parser.parseDbmlProject(__projectEntry);
+          return JSON.stringify({ database: parsed.normalize(), diagramViews: parsed.diagramViews });
+        } catch (error) {
+          return JSON.stringify({ failure: true, message: error.message, diags: error.diags?.map((diag, index) => ({ ...diag, filepath: projectErrors[index]?.filepath?.absolute ?? projectErrors[index]?.filepath?.path })) });
+        }
+      })()`, { filename: 'dbml-project-compiler' }).runInContext(ctx, { timeout: 10000 }); }
+      finally { delete ctx.__projectEntry; delete ctx.__projectSources; }
+      const compiled = JSON.parse(result);
+      if (compiled.failure) { const error = new Error(compiled.message ?? 'DBML project contains errors'); error.diags = compiled.diags; throw error; }
+      return compiled;
+    },
     parse(source) {return this.compile(source).database;}};
   cache.set(version,runtime);
   return runtime;
 }
-export function parseModel(file,version='0.4.0') { return parserRuntime(version).parse(fs.readFileSync(file,'utf8')); }
+export function parseModel(file,version='0.4.0') { return compileFile(file, parserRuntime(version)).database; }
 
 export async function exerciseEntitlement(fixture={}, version='0.4.0') {
   const bundle=loadBundle(version), r=recoverHost(bundle), cls=r.feature.code;

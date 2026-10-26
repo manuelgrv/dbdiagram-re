@@ -1,0 +1,5 @@
+Table sales.orders [headercolor: #3B82F6] {
+  id bigint [pk]
+  customer_id bigint
+  amount decimal(12,2)
+}

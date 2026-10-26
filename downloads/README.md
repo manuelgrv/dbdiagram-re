@@ -15,3 +15,5 @@ No Node.js or C++ compiler installation is needed. Keep the entire extracted app
 `SHA256SUMS.txt` records the archive digest. You can compare it with `Get-FileHash .\downloads\DBML-Studio-windows-x64.zip -Algorithm SHA256`.
 
 To refresh this checked-in build after packaging, copy `dist/DBML-Studio-windows-x64.zip` here, regenerate `SHA256SUMS.txt`, then commit/push these files. Each replaced binary adds to Git history; use releases for normal distribution and update this copy only when needed.
+
+This build includes the DBML module fix: `use`/`reuse` paths resolve relative to each importing file, and previews include unsaved imported buffers. Use Open folder to select a root containing every imported module, then open the entrypoint. The working example is `examples/modules/main.dbml` in the repository.

@@ -1,1 +1,1 @@
-29c330d72ee5587516036873593af0cdaac589e5a9db8196442673b9bc76985c  DBML-Studio-windows-x64.zip
+752e3ca38167530c52cdfbc53bb5325e5b9890aebb03d049f498dbc7de83c284  DBML-Studio-windows-x64.zip
