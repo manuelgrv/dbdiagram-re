@@ -14,7 +14,7 @@ The interactive renderer and parser still come from the official dbdiagram 0.4.0
 - `npm run studio -- examples --port 4174` starts the local workspace. Check existing listeners before starting services; a CLI instance on 4174 may already exist.
 - `npm run verify` runs the full suite (57 tests at the last feature update).
 - `npm run package:macos` builds a macOS app and ZIP for host architecture; `-- x64` selects Intel.
-- `npm run package:windows` cross-compiles Windows x64 on macOS; `-- arm64` selects ARM64. Requires Python 3 and downloads the official Node runtime and LLVM-MinGW compiler.
+- `npm run package:windows` builds Windows x64: on Windows use the x64 Native Tools prompt with MSVC C++/Windows SDK; it bundles the installed Node binary and LICENSE (override directory with DBML_NODE_DIR). No cross-toolchain downloads on Windows. On macOS it downloads the official Node runtime/LLVM-MinGW compiler and cross-compiles. `-- arm64` selects ARM64; compiler environment and Node target must match. Python is required only by the macOS packaging path or explicit reference downloader.
 - `node scripts/check-macos.mjs` checks the relocated macOS package. Windows packages include `Check Windows.cmd`; the equivalent packaged backend script can run with a host Node for limited checks.
 
 macOS native picker and Vim behavior have been verified in Safari. Windows x64 was cross-compiled and its PE target/imports inspected; Windows GUI execution remains unverified. Never describe Mac-hosted backend checks as Windows execution. Builds are unsigned (macOS is ad-hoc signed), without release certificates/notarization.
@@ -30,3 +30,7 @@ Keep `Dep` table-level and column-level declarations in separate blocks; the par
 ## Git and releases
 
 Track source, build/check scripts, tests, examples, docs, this context, and npm manifests/lockfile. Do not track `dist/`, `artifacts/` (downloaded binaries, vendor assets, recovered code, analysis output), `node_modules/`, local secrets, logs, or caches. Upload generated ZIPs as GitHub Release assets. Check redistribution permissions for bundled official renderer/parser assets before public distribution. Do not publish, commit, or upload unless the session authorizes it.
+
+## Windows-native packaging update
+
+The same `scripts/package-windows.mjs` now supports win32 (MSVC /MT, local Node runtime, built-in PowerShell/.NET ZIP creation) and darwin (LLVM-MinGW cross-build, official runtime ZIP, Python ZIP creation). Do not ask Windows users to use the Mac cross-compiler. `VCToolsInstallDir` must be set by the Native Tools prompt; PE inspection enforces the actual requested architecture and GUI subsystem. `scripts/windows-pe.mjs` performs platform-independent PE/import inspection for both paths. Acorn is now a pinned devDependency, removing the extra npm-install step on a fresh clone. Windows-native execution remains unverified on this Mac; document that limit explicitly. User needs to commit/push these changes before pulling them on the work machine; do not push without authorization.

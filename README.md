@@ -64,7 +64,26 @@ Use `dist/DBML-Studio-windows-x64.zip` for Windows 10/11 on Intel/AMD x64. Extra
 
 The native notification-area icon offers **Open Studio** and **Quit DBML Studio** (check the hidden-icons arrow if needed). Closing the browser keeps the server running; Quit shuts it down. **Open folder** in the browser opens the native Windows directory picker. The last workspace is remembered under `%LOCALAPPDATA%\DBML Studio`; the initial empty workspace is stored there too. Explorer, Monaco/Vim, themes, preview, and saves use the same production frontend/backend as the macOS build.
 
-Build on macOS with Node, npm dependencies, Python 3, and network access:
+To build the `.exe` directly on Windows, install Node.js 22.12+ (x64), Git, and **Visual Studio Build Tools 2022** with the **Desktop development with C++** workload and Windows SDK. Open **x64 Native Tools Command Prompt for VS 2022**, then run from the cloned repository:
+
+```bat
+npm.cmd ci
+py -3 scripts/fetch_reference.py 0.4.0
+npm.cmd run package:windows
+```
+
+Python 3 is only needed for the reference downloader; skip that command if the official 0.4.0 extension is already available through discovery or `DBDIAGRAM_EXTENSION_DIR`. npm dependencies and those parser/renderer assets must be available through your approved sources. Acorn is now pinned and installed by `npm ci`.
+
+The native Windows build uses `cl.exe` from the developer prompt, links the compiler runtime statically (`/MT`), and bundles the installed Node runtime and its `LICENSE`. It does not download LLVM-MinGW or another Node binary. If Node is managed by a tool that omits its license, set `DBML_NODE_DIR` to a matching approved Node distribution containing `node.exe` and `LICENSE`:
+
+```bat
+set "DBML_NODE_DIR=C:\path\to\node-distribution"
+npm.cmd run package:windows
+```
+
+Output executable: `dist\windows-x64\DBML Studio\DBML Studio.exe`. Portable ZIP: `dist\DBML-Studio-windows-x64.zip`. Keep the adjacent `resources` directory with the executable. Run `Check Windows.cmd` from the output folder to test the bundled backend. The Windows-native build path is implemented but has not been executed from this Mac.
+
+You can also cross-build on macOS with Node, npm dependencies, Python 3, and network access:
 
 ```sh
 npm run package:windows
@@ -72,7 +91,7 @@ npm run package:windows
 npm run package:windows -- arm64
 ```
 
-The packager downloads the official Windows Node 22 ZIP, verifies its published SHA-256, and cross-compiles `windows/StudioTray.cpp` using the official LLVM-MinGW macOS toolchain. Runtime/compiler hashes and URLs are recorded in `resources/PROVENANCE.json`; `BUILD-CHECKS.json` records the PE target and DLL imports. Compiler runtimes are statically linked. A Windows Job Object owns the backend so Quit/launcher exit stops it; normal Quit first closes stdin for graceful shutdown. The native host uses the same folder-picker stdout/stdin protocol as macOS.
+When cross-building on macOS, the packager downloads the official Windows Node 22 ZIP, verifies its published SHA-256, and cross-compiles `windows/StudioTray.cpp` using the official LLVM-MinGW macOS toolchain. Runtime/compiler provenance is recorded in `resources/PROVENANCE.json`; `BUILD-CHECKS.json` records the PE target and DLL imports using a platform-independent PE reader. Compiler runtimes are statically linked. A Windows Job Object owns the backend so Quit/launcher exit stops it; normal Quit first closes stdin for graceful shutdown. The native host uses the same folder-picker stdout/stdin protocol as macOS.
 
 The Windows executable is unsigned. It has been cross-compiled and inspected on macOS; **Windows GUI execution is not yet verified**. The packaged backend smoke check passed on macOS with Unicode/space paths, lineage preview, safe save, and workspace switching. Run **Check Windows.cmd** on a Windows machine to test the bundled Windows Node runtime and filesystem behavior, then manually check the tray menu, native folder picker, browser opening, duplicate launch, and Quit. `Studio CLI.cmd [DIRECTORY]` is the terminal launcher.
 
