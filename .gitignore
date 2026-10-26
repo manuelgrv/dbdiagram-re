@@ -27,3 +27,10 @@ Desktop.ini
 *.swp
 *.swo
 *~
+
+# Explicit opt-in portable build for retrieval through git clone/pull.
+# Keep everything else in downloads excluded unless deliberately allowed here.
+/downloads/*
+!/downloads/README.md
+!/downloads/SHA256SUMS.txt
+!/downloads/DBML-Studio-windows-x64.zip

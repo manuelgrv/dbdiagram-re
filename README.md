@@ -58,6 +58,10 @@ For terminal use without the native dialogs:
 
 Press Ctrl+C to stop. The app retains original extension package notices and includes the Node license; it packages the existing renderer rather than replacing it with an independent implementation. Run `node scripts/check-macos.mjs` after packaging to test relocation, startup without system Node or extension discovery, frontend/renderer delivery, lineage preview, and saving.
 
+## Windows build included with the clone
+
+If you want the ready-to-run build through Git, see [downloads/README.md](downloads/README.md). `downloads/DBML-Studio-windows-x64.zip` is an intentional exception to the source-only repository layout: clone/pull includes it without a compiler, system Node installation, or separate Release download. All other generated builds remain ignored. This binary is stored in regular Git, not Git LFS.
+
 ## Portable Windows app
 
 Use `dist/DBML-Studio-windows-x64.zip` for Windows 10/11 on Intel/AMD x64. Extract the entire ZIP, then double-click **DBML Studio.exe**. Node.js, npm, and VS Code are included or unnecessary on the destination machine. No installation or administrator rights are needed.

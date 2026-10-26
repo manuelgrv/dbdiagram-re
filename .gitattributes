@@ -1,0 +1,2 @@
+# Portable ZIPs are intentionally stored as ordinary Git binary files.
+downloads/*.zip binary
