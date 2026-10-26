@@ -1,0 +1,33 @@
+{
+  "name": "dbdiagram-re",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reproducible local analysis of installed dbdiagram VS Code bundles",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "analyze": "node src/cli.mjs analyze",
+    "verify": "node --test --test-concurrency=1 test/*.test.mjs",
+    "model": "node src/cli.mjs model examples/retail_lineage.dbml",
+    "trace": "node src/cli.mjs trace examples/retail_lineage.dbml reporting.daily_revenue.net_revenue upstream",
+    "compare": "node src/cli.mjs compare 0.4.0 0.5.3",
+    "build:artifacts": "node src/build-artifacts.mjs",
+    "render": "node src/cli.mjs render",
+    "serve": "node src/cli.mjs serve",
+    "studio": "node src/cli.mjs studio",
+    "dev": "node src/cli.mjs studio .. --dev",
+    "build": "vite build --config vite.config.mjs",
+    "package:macos": "npm run build && node scripts/package-macos.mjs",
+    "package:windows": "npm run build && node scripts/package-windows.mjs"
+  },
+  "devDependencies": {
+    "monaco-editor": "0.56.0",
+    "monaco-vim": "0.4.4",
+    "vite": "8.3.5"
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
+  }
+}

@@ -1,0 +1,21 @@
+Project sales_example {
+  database_type: 'PostgreSQL'
+}
+
+Table source.orders [headercolor: #3B82F6] {
+  order_id bigint [pk]
+  ordered_at timestamp
+  amount decimal(12,2)
+}
+
+Table reporting.daily_sales [headercolor: #10B981] {
+  sales_date date [pk]
+  total_amount decimal(14,2)
+}
+
+Dep: source.orders -> reporting.daily_sales
+Dep daily_sales {
+  source.orders.ordered_at -> reporting.daily_sales.sales_date
+  source.orders.amount -> reporting.daily_sales.total_amount
+  note: 'Group orders by date and sum their amounts.'
+}

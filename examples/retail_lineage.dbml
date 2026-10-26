@@ -1,0 +1,624 @@
+// Retail ETL: operational sources -> staging -> warehouse -> reporting.
+// Use Link type = Dependency to explore lineage; All also shows foreign keys.
+// Every named Dep block contains only column-level mappings.
+// Table-level and mixed-level dependencies are declared separately.
+// Queries are illustrative SELECTs, not executable ETL orchestration.
+// Currency: USD; timestamps: UTC; taxes and shipping are excluded.
+
+Project retail_lineage_example {
+  database_type: 'PostgreSQL'
+  Note: 'Nineteen-table retail ETL example. Load staging, upsert dimensions, refresh facts, then rebuild reporting marts. Dimension surrogate keys remain stable across upserts. Facts are rebuilt to reflect status changes. Successful refunds are separate events: the original fulfilled order retains completed status. Daily reporting distinguishes sales-date revenue, refund-date refunds, and payment-date cash collections.'
+}
+
+Table source.customers [headercolor: #3B82F6] {
+  customer_id bigint [pk]
+  email varchar(255) [not null, unique]
+  first_name varchar(100)
+  last_name varchar(100)
+  country_code char(2) [not null]
+  created_at timestamp [not null]
+
+  Note: 'Grain: one operational customer. Customer changes overwrite the current record.'
+}
+
+Table source.products {
+  product_id bigint [pk]
+  sku varchar(50) [not null, unique]
+  product_name varchar(200) [not null]
+  category varchar(100) [not null]
+
+  Note: 'Grain: one product. Category is the current category, not a historical snapshot.'
+}
+
+Table source.orders {
+  order_id bigint [pk]
+  customer_id bigint [not null]
+  ordered_at timestamp [not null]
+  status varchar(30) [not null]
+
+  Note: 'Grain: one order. Status is pending, completed, or cancelled. Refunds do not change completed status in this example.'
+}
+
+Table source.order_items {
+  order_item_id bigint [pk]
+  order_id bigint [not null]
+  product_id bigint [not null]
+  quantity int [not null]
+  unit_price decimal(12,2) [not null]
+  discount_amount decimal(14,2) [not null, default: 0]
+
+  Note: 'Grain: one order line. discount_amount is the total line discount, not a per-unit discount. Assume positive quantities and discounts between zero and gross line value.'
+}
+
+Table source.payments {
+  payment_id bigint [pk]
+  order_id bigint [not null]
+  paid_at timestamp [not null]
+  method varchar(30) [not null]
+  status varchar(30) [not null]
+  amount decimal(14,2) [not null]
+
+  Note: 'Grain: one payment attempt. An order can have multiple payments. Only succeeded payments contribute to cash collections.'
+}
+
+Table source.refunds {
+  refund_id bigint [pk]
+  order_item_id bigint [not null]
+  payment_id bigint [not null]
+  refunded_at timestamp [not null]
+  status varchar(30) [not null]
+  amount decimal(14,2) [not null]
+  reason varchar(100)
+
+  Note: 'Grain: one refund event allocated to one order line and one payment. Multiple partial refunds are allowed. Assume a succeeded refund references a succeeded payment for the same order; cumulative refunds cannot exceed the paid line value.'
+}
+
+Table staging.stg_customers {
+  customer_id bigint [pk]
+  email varchar(255) [not null]
+  full_name varchar(201)
+  country_code char(2) [not null]
+  created_date date [not null]
+
+  Note: 'Grain: one customer. Normalize email and country; combine names. Current-state view.'
+}
+
+Table staging.stg_products {
+  product_id bigint [pk]
+  sku varchar(50) [not null]
+  product_name varchar(200) [not null]
+  category varchar(100) [not null]
+
+  Note: 'Grain: one product. Trim labels and normalize category. Current-state view.'
+}
+
+Table staging.stg_sales_lines {
+  order_item_id bigint [pk]
+  order_id bigint [not null]
+  customer_id bigint [not null]
+  product_id bigint [not null]
+  sales_date date [not null]
+  quantity int [not null]
+  gross_revenue decimal(14,2) [not null]
+  discount_amount decimal(14,2) [not null]
+  net_revenue decimal(14,2) [not null]
+
+  Note: 'Grain: one completed order line. Join headers to items. net_revenue equals gross less line discount, before refunds.'
+}
+
+Table staging.stg_payments {
+  payment_id bigint [pk]
+  order_id bigint [not null]
+  customer_id bigint [not null]
+  payment_date date [not null]
+  method varchar(30) [not null]
+  amount decimal(14,2) [not null]
+
+  Note: 'Grain: one succeeded payment, including payments for orders not yet completed. Cash timing is independent of sales timing.'
+}
+
+Table staging.stg_refunds {
+  refund_id bigint [pk]
+  order_item_id bigint [not null]
+  payment_id bigint [not null]
+  refund_date date [not null]
+  refund_amount decimal(14,2) [not null]
+  reason varchar(100)
+
+  Note: 'Grain: one succeeded line-level refund. Refund date is the event date, not the original sales date.'
+}
+
+Table warehouse.dim_customer {
+  customer_key bigint [pk, increment]
+  source_customer_id bigint [not null, unique]
+  email varchar(255) [not null]
+  full_name varchar(201)
+  country_code char(2) [not null]
+  created_date date [not null]
+  loaded_at timestamp [not null]
+
+  Note: 'Grain: one current customer. Upsert by source_customer_id, keeping customer_key stable. Type 1 dimension; no historical versions.'
+}
+
+Table warehouse.dim_product {
+  product_key bigint [pk, increment]
+  source_product_id bigint [not null, unique]
+  sku varchar(50) [not null]
+  product_name varchar(200) [not null]
+  category varchar(100) [not null]
+  loaded_at timestamp [not null]
+
+  Note: 'Grain: one current product. Upsert by source_product_id, keeping product_key stable. Category changes restate product reports.'
+}
+
+Table warehouse.fact_sales {
+  sales_key bigint [pk, increment]
+  source_order_item_id bigint [not null, unique]
+  source_order_id bigint [not null]
+  customer_key bigint [not null]
+  product_key bigint [not null]
+  sales_date date [not null]
+  quantity int [not null]
+  gross_revenue decimal(14,2) [not null]
+  discount_amount decimal(14,2) [not null]
+  net_revenue decimal(14,2) [not null]
+  loaded_at timestamp [not null]
+
+  Note: 'Grain: one completed order line. Resolve dimension keys after dimensions load. Rebuild facts; the load generates sales_key. Refund linkage uses the stable source_order_item_id.'
+}
+
+Table warehouse.fact_payments {
+  source_payment_id bigint [pk]
+  source_order_id bigint [not null]
+  customer_key bigint [not null]
+  payment_date date [not null]
+  method varchar(30) [not null]
+  collected_amount decimal(14,2) [not null]
+
+  Note: 'Grain: one succeeded payment. Kept separate from line sales to prevent payment amounts multiplying across order lines.'
+}
+
+Table warehouse.fact_refunds {
+  source_refund_id bigint [pk]
+  source_order_item_id bigint [not null]
+  source_payment_id bigint [not null]
+  customer_key bigint [not null]
+  product_key bigint [not null]
+  refund_date date [not null]
+  refund_amount decimal(14,2) [not null]
+  reason varchar(100)
+
+  Note: 'Grain: one succeeded refund. Enrich with customer and product from the original sales line. Load after sales and payments. Source assumptions ensure all succeeded refunds resolve to these facts.'
+}
+
+Table reporting.daily_revenue {
+  sales_date date [pk]
+  order_count bigint [not null]
+  units_sold bigint [not null]
+  gross_revenue decimal(18,2) [not null]
+  discount_amount decimal(18,2) [not null]
+  net_sales decimal(18,2) [not null]
+  refund_amount decimal(18,2) [not null]
+  net_revenue decimal(18,2) [not null]
+  collected_amount decimal(18,2) [not null]
+  net_cash decimal(18,2) [not null]
+
+  Note: 'Grain: one active calendar day. sales_date is the reporting day for all event streams. Include sales-only, payment-only, and refund-only days. Aggregate each fact separately before joining. net_revenue = net_sales - refund_amount; net_cash = collected_amount - refund_amount.'
+}
+
+Table reporting.product_performance {
+  product_key bigint [pk]
+  category varchar(100) [not null]
+  units_sold bigint [not null]
+  order_count bigint [not null]
+  net_sales decimal(18,2) [not null]
+  refund_amount decimal(18,2) [not null]
+  net_revenue decimal(18,2) [not null]
+
+  Note: 'Grain: one product with completed sales, over all history. Product returns do not reduce units_sold because refunds carry amounts, not returned quantities. Preaggregate refunds per product before joining sales.'
+}
+
+Table reporting.customer_value {
+  customer_key bigint [pk]
+  country_code char(2) [not null]
+  first_order_date date
+  last_order_date date
+  order_count bigint [not null]
+  net_sales decimal(18,2) [not null]
+  refund_amount decimal(18,2) [not null]
+  lifetime_value decimal(18,2) [not null]
+  segment varchar(30) [not null]
+
+  Note: 'Grain: every customer, including customers with no completed orders. lifetime_value is realized net sales less refunds, not predicted future value. VIP threshold is USD 1000; new means zero completed orders.'
+}
+
+// Relational keys; cross-layer data flow is expressed separately with Dep.
+Ref: source.orders.customer_id > source.customers.customer_id
+Ref: source.order_items.order_id > source.orders.order_id
+Ref: source.order_items.product_id > source.products.product_id
+Ref: source.payments.order_id > source.orders.order_id
+Ref: source.refunds.order_item_id > source.order_items.order_item_id
+Ref: source.refunds.payment_id > source.payments.payment_id
+Ref: warehouse.fact_sales.customer_key > warehouse.dim_customer.customer_key
+Ref: warehouse.fact_sales.product_key > warehouse.dim_product.product_key
+Ref: warehouse.fact_payments.customer_key > warehouse.dim_customer.customer_key
+Ref: warehouse.fact_refunds.source_order_item_id > warehouse.fact_sales.source_order_item_id
+Ref: warehouse.fact_refunds.source_payment_id > warehouse.fact_payments.source_payment_id
+Ref: warehouse.fact_refunds.customer_key > warehouse.dim_customer.customer_key
+Ref: warehouse.fact_refunds.product_key > warehouse.dim_product.product_key
+Ref: reporting.product_performance.product_key > warehouse.dim_product.product_key
+Ref: reporting.customer_value.customer_key > warehouse.dim_customer.customer_key
+
+// clean_customers: table-level inputs.
+Dep: source.customers -> staging.stg_customers
+Dep clean_customers [color: #3B82F6] {
+  source.customers.customer_id -> staging.stg_customers.customer_id
+  source.customers.email -> staging.stg_customers.email
+  source.customers.first_name -> staging.stg_customers.full_name
+  source.customers.last_name -> staging.stg_customers.full_name
+  source.customers.country_code -> staging.stg_customers.country_code
+  source.customers.created_at -> staging.stg_customers.created_date
+
+  note: 'Normalize strings and derive the UTC registration date.'
+  materialized: 'view'
+  query: '''
+    SELECT customer_id, LOWER(TRIM(email)) AS email,
+      TRIM(CONCAT_WS(' ', first_name, last_name)) AS full_name,
+      UPPER(TRIM(country_code)) AS country_code, CAST(created_at AS date) AS created_date
+    FROM source.customers;
+  '''
+}
+
+// clean_products: table-level inputs.
+Dep: source.products -> staging.stg_products
+Dep clean_products [color: #3B82F6] {
+  source.products.product_id -> staging.stg_products.product_id
+  source.products.sku -> staging.stg_products.sku
+  source.products.product_name -> staging.stg_products.product_name
+  source.products.category -> staging.stg_products.category
+
+  note: 'Trim product labels; lowercase category.'
+  materialized: 'view'
+  query: '''
+    SELECT product_id, TRIM(sku) AS sku, TRIM(product_name) AS product_name,
+      LOWER(TRIM(category)) AS category FROM source.products;
+  '''
+}
+
+// prepare_sales_lines: table-level inputs.
+Dep: source.orders -> staging.stg_sales_lines
+Dep: source.order_items -> staging.stg_sales_lines
+Dep prepare_sales_lines [color: #3B82F6] {
+  source.order_items.order_item_id -> staging.stg_sales_lines.order_item_id
+  source.orders.order_id -> staging.stg_sales_lines.order_id
+  source.orders.customer_id -> staging.stg_sales_lines.customer_id
+  source.order_items.product_id -> staging.stg_sales_lines.product_id
+  source.orders.ordered_at -> staging.stg_sales_lines.sales_date
+  source.order_items.quantity -> staging.stg_sales_lines.quantity
+  source.order_items.quantity -> staging.stg_sales_lines.gross_revenue
+  source.order_items.unit_price -> staging.stg_sales_lines.gross_revenue
+  source.order_items.discount_amount -> staging.stg_sales_lines.discount_amount
+  source.order_items.quantity -> staging.stg_sales_lines.net_revenue
+  source.order_items.unit_price -> staging.stg_sales_lines.net_revenue
+  source.order_items.discount_amount -> staging.stg_sales_lines.net_revenue
+
+  note: 'Join order headers and lines, keep completed orders, and compute gross and discounted line revenue.'
+  materialized: 'view'
+  query: '''
+    SELECT i.order_item_id, o.order_id, o.customer_id, i.product_id,
+      CAST(o.ordered_at AS date) AS sales_date, i.quantity,
+      i.quantity * i.unit_price AS gross_revenue, i.discount_amount,
+      i.quantity * i.unit_price - i.discount_amount AS net_revenue
+    FROM source.orders o JOIN source.order_items i ON i.order_id = o.order_id
+    WHERE o.status = 'completed';
+  '''
+}
+
+Dep: source.orders.status -> staging.stg_sales_lines
+
+// prepare_payments: table-level inputs.
+Dep: source.payments -> staging.stg_payments
+Dep: source.orders -> staging.stg_payments
+Dep prepare_payments [color: #3B82F6] {
+  source.payments.payment_id -> staging.stg_payments.payment_id
+  source.payments.order_id -> staging.stg_payments.order_id
+  source.orders.customer_id -> staging.stg_payments.customer_id
+  source.payments.paid_at -> staging.stg_payments.payment_date
+  source.payments.method -> staging.stg_payments.method
+  source.payments.amount -> staging.stg_payments.amount
+
+  note: 'Keep succeeded payments; attach the customer using the order header.'
+  materialized: 'view'
+  query: '''
+    SELECT p.payment_id, p.order_id, o.customer_id,
+      CAST(p.paid_at AS date) AS payment_date, LOWER(TRIM(p.method)) AS method, p.amount
+    FROM source.payments p JOIN source.orders o ON o.order_id = p.order_id
+    WHERE p.status = 'succeeded';
+  '''
+}
+
+Dep: source.payments.status -> staging.stg_payments
+
+// prepare_refunds: table-level inputs.
+Dep: source.refunds -> staging.stg_refunds
+Dep prepare_refunds [color: #3B82F6] {
+  source.refunds.refund_id -> staging.stg_refunds.refund_id
+  source.refunds.order_item_id -> staging.stg_refunds.order_item_id
+  source.refunds.payment_id -> staging.stg_refunds.payment_id
+  source.refunds.refunded_at -> staging.stg_refunds.refund_date
+  source.refunds.amount -> staging.stg_refunds.refund_amount
+  source.refunds.reason -> staging.stg_refunds.reason
+
+  note: 'Keep succeeded refunds, derive the event date, and rename amount.'
+  materialized: 'view'
+  query: '''
+    SELECT refund_id, order_item_id, payment_id, CAST(refunded_at AS date) AS refund_date,
+      amount AS refund_amount, reason FROM source.refunds WHERE status = 'succeeded';
+  '''
+}
+
+Dep: source.refunds.status -> staging.stg_refunds
+
+// load_dim_customer: table-level inputs.
+Dep: staging.stg_customers -> warehouse.dim_customer
+Dep load_dim_customer [color: #10B981] {
+  staging.stg_customers.customer_id -> warehouse.dim_customer.source_customer_id
+  staging.stg_customers.email -> warehouse.dim_customer.email
+  staging.stg_customers.full_name -> warehouse.dim_customer.full_name
+  staging.stg_customers.country_code -> warehouse.dim_customer.country_code
+  staging.stg_customers.created_date -> warehouse.dim_customer.created_date
+
+  note: 'Upsert by source ID; assign a surrogate key on insert and retain it on updates. Load process supplies the generated key.'
+  materialized: 'table'
+  query: '''
+    SELECT customer_id AS source_customer_id, email, full_name, country_code, created_date,
+      CURRENT_TIMESTAMP AS loaded_at FROM staging.stg_customers;
+  '''
+}
+
+// load_dim_product: table-level inputs.
+Dep: staging.stg_products -> warehouse.dim_product
+Dep load_dim_product [color: #10B981] {
+  staging.stg_products.product_id -> warehouse.dim_product.source_product_id
+  staging.stg_products.sku -> warehouse.dim_product.sku
+  staging.stg_products.product_name -> warehouse.dim_product.product_name
+  staging.stg_products.category -> warehouse.dim_product.category
+
+  note: 'Upsert by source ID; assign a surrogate key on insert and retain it on updates. Load process supplies the generated key.'
+  materialized: 'table'
+  query: '''
+    SELECT product_id AS source_product_id, sku, product_name, category,
+      CURRENT_TIMESTAMP AS loaded_at FROM staging.stg_products;
+  '''
+}
+
+// load_fact_sales: table-level inputs.
+Dep: staging.stg_sales_lines -> warehouse.fact_sales
+Dep: warehouse.dim_customer -> warehouse.fact_sales
+Dep: warehouse.dim_product -> warehouse.fact_sales
+Dep load_fact_sales [color: #10B981] {
+  staging.stg_sales_lines.order_item_id -> warehouse.fact_sales.source_order_item_id
+  staging.stg_sales_lines.order_id -> warehouse.fact_sales.source_order_id
+  warehouse.dim_customer.customer_key -> warehouse.fact_sales.customer_key
+  warehouse.dim_product.product_key -> warehouse.fact_sales.product_key
+  staging.stg_sales_lines.sales_date -> warehouse.fact_sales.sales_date
+  staging.stg_sales_lines.quantity -> warehouse.fact_sales.quantity
+  staging.stg_sales_lines.gross_revenue -> warehouse.fact_sales.gross_revenue
+  staging.stg_sales_lines.discount_amount -> warehouse.fact_sales.discount_amount
+  staging.stg_sales_lines.net_revenue -> warehouse.fact_sales.net_revenue
+
+  note: 'Resolve both dimension keys and rebuild sales facts. The loader generates sales_key; dimensions must be complete before this step.'
+  materialized: 'table'
+  query: '''
+    SELECT s.order_item_id AS source_order_item_id, s.order_id AS source_order_id,
+      c.customer_key, p.product_key, s.sales_date, s.quantity,
+      s.gross_revenue, s.discount_amount, s.net_revenue, CURRENT_TIMESTAMP AS loaded_at
+    FROM staging.stg_sales_lines s
+    JOIN warehouse.dim_customer c ON c.source_customer_id = s.customer_id
+    JOIN warehouse.dim_product p ON p.source_product_id = s.product_id;
+  '''
+}
+
+// load_fact_payments: table-level inputs.
+Dep: staging.stg_payments -> warehouse.fact_payments
+Dep: warehouse.dim_customer -> warehouse.fact_payments
+Dep load_fact_payments [color: #10B981] {
+  staging.stg_payments.payment_id -> warehouse.fact_payments.source_payment_id
+  staging.stg_payments.order_id -> warehouse.fact_payments.source_order_id
+  warehouse.dim_customer.customer_key -> warehouse.fact_payments.customer_key
+  staging.stg_payments.payment_date -> warehouse.fact_payments.payment_date
+  staging.stg_payments.method -> warehouse.fact_payments.method
+  staging.stg_payments.amount -> warehouse.fact_payments.collected_amount
+
+  note: 'Resolve customer key and retain one row per payment; never join payments directly to sales lines for reporting.'
+  materialized: 'table'
+  query: '''
+    SELECT p.payment_id AS source_payment_id, p.order_id AS source_order_id,
+      c.customer_key, p.payment_date, p.method, p.amount AS collected_amount
+    FROM staging.stg_payments p
+    JOIN warehouse.dim_customer c ON c.source_customer_id = p.customer_id;
+  '''
+}
+
+// load_fact_refunds: table-level inputs.
+Dep: staging.stg_refunds -> warehouse.fact_refunds
+Dep: warehouse.fact_sales -> warehouse.fact_refunds
+Dep: warehouse.fact_payments -> warehouse.fact_refunds
+Dep load_fact_refunds [color: #10B981] {
+  staging.stg_refunds.refund_id -> warehouse.fact_refunds.source_refund_id
+  staging.stg_refunds.order_item_id -> warehouse.fact_refunds.source_order_item_id
+  staging.stg_refunds.payment_id -> warehouse.fact_refunds.source_payment_id
+  warehouse.fact_sales.customer_key -> warehouse.fact_refunds.customer_key
+  warehouse.fact_sales.product_key -> warehouse.fact_refunds.product_key
+  staging.stg_refunds.refund_date -> warehouse.fact_refunds.refund_date
+  staging.stg_refunds.refund_amount -> warehouse.fact_refunds.refund_amount
+  staging.stg_refunds.reason -> warehouse.fact_refunds.reason
+
+  note: 'Enrich each refund with the original sales dimensions and validate its payment belongs to the same order.'
+  materialized: 'table'
+  query: '''
+    SELECT r.refund_id AS source_refund_id, r.order_item_id AS source_order_item_id,
+      r.payment_id AS source_payment_id, s.customer_key, s.product_key,
+      r.refund_date, r.refund_amount, r.reason
+    FROM staging.stg_refunds r
+    JOIN warehouse.fact_sales s ON s.source_order_item_id = r.order_item_id
+    JOIN warehouse.fact_payments p ON p.source_payment_id = r.payment_id
+      AND p.source_order_id = s.source_order_id;
+  '''
+}
+
+// aggregate_daily_revenue: table-level inputs.
+Dep: warehouse.fact_sales -> reporting.daily_revenue
+Dep: warehouse.fact_payments -> reporting.daily_revenue
+Dep: warehouse.fact_refunds -> reporting.daily_revenue
+Dep aggregate_daily_revenue [color: #F59E0B] {
+  warehouse.fact_sales.sales_date -> reporting.daily_revenue.sales_date
+  warehouse.fact_payments.payment_date -> reporting.daily_revenue.sales_date
+  warehouse.fact_refunds.refund_date -> reporting.daily_revenue.sales_date
+  warehouse.fact_sales.source_order_id -> reporting.daily_revenue.order_count
+  warehouse.fact_sales.quantity -> reporting.daily_revenue.units_sold
+  warehouse.fact_sales.gross_revenue -> reporting.daily_revenue.gross_revenue
+  warehouse.fact_sales.discount_amount -> reporting.daily_revenue.discount_amount
+  warehouse.fact_sales.net_revenue -> reporting.daily_revenue.net_sales
+  warehouse.fact_refunds.refund_amount -> reporting.daily_revenue.refund_amount
+  warehouse.fact_sales.net_revenue -> reporting.daily_revenue.net_revenue
+  warehouse.fact_refunds.refund_amount -> reporting.daily_revenue.net_revenue
+  warehouse.fact_payments.collected_amount -> reporting.daily_revenue.collected_amount
+  warehouse.fact_payments.collected_amount -> reporting.daily_revenue.net_cash
+  warehouse.fact_refunds.refund_amount -> reporting.daily_revenue.net_cash
+
+  note: 'Aggregate each event stream first, then join on calendar day. UNION the dates to retain payment-only and refund-only days. Zero-fill missing measures.'
+  materialized: 'table'
+  query: '''
+    WITH sales AS (
+      SELECT sales_date AS day, COUNT(DISTINCT source_order_id) AS orders,
+        SUM(quantity) AS units, SUM(gross_revenue) AS gross,
+        SUM(discount_amount) AS discounts, SUM(net_revenue) AS net_sales
+      FROM warehouse.fact_sales GROUP BY sales_date
+    ), payments AS (
+      SELECT payment_date AS day, SUM(collected_amount) AS collected
+      FROM warehouse.fact_payments GROUP BY payment_date
+    ), refunds AS (
+      SELECT refund_date AS day, SUM(refund_amount) AS refunded
+      FROM warehouse.fact_refunds GROUP BY refund_date
+    ), days AS (
+      SELECT day FROM sales UNION SELECT day FROM payments UNION SELECT day FROM refunds
+    )
+    SELECT d.day AS sales_date, COALESCE(s.orders,0) AS order_count,
+      COALESCE(s.units,0) AS units_sold, COALESCE(s.gross,0) AS gross_revenue,
+      COALESCE(s.discounts,0) AS discount_amount, COALESCE(s.net_sales,0) AS net_sales,
+      COALESCE(r.refunded,0) AS refund_amount,
+      COALESCE(s.net_sales,0) - COALESCE(r.refunded,0) AS net_revenue,
+      COALESCE(p.collected,0) AS collected_amount,
+      COALESCE(p.collected,0) - COALESCE(r.refunded,0) AS net_cash
+    FROM days d LEFT JOIN sales s ON s.day = d.day
+    LEFT JOIN payments p ON p.day = d.day LEFT JOIN refunds r ON r.day = d.day;
+  '''
+}
+
+// aggregate_product_performance: table-level inputs.
+Dep: warehouse.fact_sales -> reporting.product_performance
+Dep: warehouse.fact_refunds -> reporting.product_performance
+Dep: warehouse.dim_product -> reporting.product_performance
+Dep aggregate_product_performance [color: #F59E0B] {
+  warehouse.dim_product.product_key -> reporting.product_performance.product_key
+  warehouse.dim_product.category -> reporting.product_performance.category
+  warehouse.fact_sales.quantity -> reporting.product_performance.units_sold
+  warehouse.fact_sales.source_order_id -> reporting.product_performance.order_count
+  warehouse.fact_sales.net_revenue -> reporting.product_performance.net_sales
+  warehouse.fact_refunds.refund_amount -> reporting.product_performance.refund_amount
+  warehouse.fact_sales.net_revenue -> reporting.product_performance.net_revenue
+  warehouse.fact_refunds.refund_amount -> reporting.product_performance.net_revenue
+
+  note: 'Aggregate sales and refunds independently by product, then attach current category. Multiple refunds cannot multiply sales totals.'
+  materialized: 'table'
+  query: '''
+    WITH sales AS (
+      SELECT product_key, SUM(quantity) AS units_sold,
+        COUNT(DISTINCT source_order_id) AS order_count, SUM(net_revenue) AS net_sales
+      FROM warehouse.fact_sales GROUP BY product_key
+    ), refunds AS (
+      SELECT product_key, SUM(refund_amount) AS refund_amount
+      FROM warehouse.fact_refunds GROUP BY product_key
+    )
+    SELECT p.product_key, p.category, s.units_sold, s.order_count, s.net_sales,
+      COALESCE(r.refund_amount,0) AS refund_amount,
+      s.net_sales - COALESCE(r.refund_amount,0) AS net_revenue
+    FROM sales s JOIN warehouse.dim_product p ON p.product_key = s.product_key
+    LEFT JOIN refunds r ON r.product_key = s.product_key;
+  '''
+}
+
+// aggregate_customer_value: table-level inputs.
+Dep: warehouse.dim_customer -> reporting.customer_value
+Dep: warehouse.fact_sales -> reporting.customer_value
+Dep: warehouse.fact_refunds -> reporting.customer_value
+Dep aggregate_customer_value [color: #F59E0B] {
+  warehouse.dim_customer.customer_key -> reporting.customer_value.customer_key
+  warehouse.dim_customer.country_code -> reporting.customer_value.country_code
+  warehouse.fact_sales.sales_date -> reporting.customer_value.first_order_date
+  warehouse.fact_sales.sales_date -> reporting.customer_value.last_order_date
+  warehouse.fact_sales.source_order_id -> reporting.customer_value.order_count
+  warehouse.fact_sales.net_revenue -> reporting.customer_value.net_sales
+  warehouse.fact_refunds.refund_amount -> reporting.customer_value.refund_amount
+  warehouse.fact_sales.net_revenue -> reporting.customer_value.lifetime_value
+  warehouse.fact_refunds.refund_amount -> reporting.customer_value.lifetime_value
+  warehouse.fact_sales.source_order_id -> reporting.customer_value.segment
+  warehouse.fact_sales.net_revenue -> reporting.customer_value.segment
+  warehouse.fact_refunds.refund_amount -> reporting.customer_value.segment
+
+  note: 'Left join independently aggregated sales and refunds to all customers. Segment by realized lifetime value: VIP >= 1000, new = no completed orders, otherwise regular.'
+  materialized: 'table'
+  query: '''
+    WITH sales AS (
+      SELECT customer_key, MIN(sales_date) AS first_order_date, MAX(sales_date) AS last_order_date,
+        COUNT(DISTINCT source_order_id) AS order_count, SUM(net_revenue) AS net_sales
+      FROM warehouse.fact_sales GROUP BY customer_key
+    ), refunds AS (
+      SELECT customer_key, SUM(refund_amount) AS refund_amount
+      FROM warehouse.fact_refunds GROUP BY customer_key
+    )
+    SELECT c.customer_key, c.country_code, s.first_order_date, s.last_order_date,
+      COALESCE(s.order_count,0) AS order_count, COALESCE(s.net_sales,0) AS net_sales,
+      COALESCE(r.refund_amount,0) AS refund_amount,
+      COALESCE(s.net_sales,0) - COALESCE(r.refund_amount,0) AS lifetime_value,
+      CASE WHEN COALESCE(s.order_count,0) = 0 THEN 'new'
+           WHEN COALESCE(s.net_sales,0) - COALESCE(r.refund_amount,0) >= 1000 THEN 'vip'
+           ELSE 'regular' END AS segment
+    FROM warehouse.dim_customer c LEFT JOIN sales s ON s.customer_key = c.customer_key
+    LEFT JOIN refunds r ON r.customer_key = c.customer_key;
+  '''
+}
+
+// Optional visual grouping: rendered when the account enables table groups.
+
+TableGroup source_layer {
+  source.customers
+  source.products
+  source.orders
+  source.order_items
+  source.payments
+  source.refunds
+}
+
+TableGroup staging_layer {
+  staging.stg_customers
+  staging.stg_products
+  staging.stg_sales_lines
+  staging.stg_payments
+  staging.stg_refunds
+}
+
+TableGroup warehouse_layer {
+  warehouse.dim_customer
+  warehouse.dim_product
+  warehouse.fact_sales
+  warehouse.fact_payments
+  warehouse.fact_refunds
+}
+
+TableGroup reporting_layer {
+  reporting.daily_revenue
+  reporting.product_performance
+  reporting.customer_value
+}

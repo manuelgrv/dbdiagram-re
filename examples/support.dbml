@@ -1,0 +1,18 @@
+Table support.tickets [headercolor: #8B5CF6] {
+  ticket_id bigint [pk]
+  customer_id bigint
+  opened_at timestamp
+  resolved_at timestamp
+}
+
+Table reporting.customer_support [headercolor: #F59E0B] {
+  customer_id bigint [pk]
+  ticket_count integer
+}
+
+Dep: support.tickets -> reporting.customer_support
+Dep customer_support {
+  support.tickets.customer_id -> reporting.customer_support.customer_id
+  support.tickets.ticket_id -> reporting.customer_support.ticket_count
+  note: 'Count tickets per customer.'
+}

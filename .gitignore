@@ -1,0 +1,29 @@
+# Installed dependencies and generated builds/release archives
+node_modules/
+/dist/
+/artifacts/
+
+# Test reports, caches, and temporary output
+/coverage/
+/.cache/
+/.vite/
+/tmp/
+/temp/
+*.tsbuildinfo
+*.log
+
+# Local secrets/configuration; keep shareable example templates
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Operating-system and editor working files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+.idea/
+*.swp
+*.swo
+*~

@@ -1,0 +1,32 @@
+# Agent context
+
+This directory is the Git repository root. The original working directory had additional parent files; builds and tests must not require those files. The complete retail test model and optional layout fixture are under `examples/`.
+
+## Project
+
+DBML Studio provides a CLI, Vite/Monaco editor, workspace explorer, live diagram rendering, light/dark themes, Vim toggle, and portable native tray apps. Read `README.md` and `docs/studio.md` for usage and architecture. Source is under `src/`, `ui/`, and `web/`; native hosts are `macos/StudioMenu.swift` and `windows/StudioTray.cpp`.
+
+The interactive renderer and parser still come from the official dbdiagram 0.4.0 extension. The SVG renderer is our own. Do not claim the app is an independent reimplementation. Version 0.5.3 has a known lineage renderer regression; prefer 0.4.0. `src/environment.mjs` discovers installed or archived extension packages and supports `DBDIAGRAM_EXTENSION_DIR` / `ACORN_PATH` overrides. See README for dependency setup; official package artifacts are deliberately ignored.
+
+## Build and verification
+
+- `npm ci`, then `npm run build`; production frontend is `dist/studio/`.
+- `npm run studio -- examples --port 4174` starts the local workspace. Check existing listeners before starting services; a CLI instance on 4174 may already exist.
+- `npm run verify` runs the full suite (57 tests at the last feature update).
+- `npm run package:macos` builds a macOS app and ZIP for host architecture; `-- x64` selects Intel.
+- `npm run package:windows` cross-compiles Windows x64 on macOS; `-- arm64` selects ARM64. Requires Python 3 and downloads the official Node runtime and LLVM-MinGW compiler.
+- `node scripts/check-macos.mjs` checks the relocated macOS package. Windows packages include `Check Windows.cmd`; the equivalent packaged backend script can run with a host Node for limited checks.
+
+macOS native picker and Vim behavior have been verified in Safari. Windows x64 was cross-compiled and its PE target/imports inspected; Windows GUI execution remains unverified. Never describe Mac-hosted backend checks as Windows execution. Builds are unsigned (macOS is ad-hoc signed), without release certificates/notarization.
+
+## Behavior to preserve
+
+Open folder changes the workspace root, updates its recursive watcher, and rotates the write token. Cancellation retains the current workspace; selecting the same root keeps the token. Other tabs preserve buffers but require reload after another tab changes the root. Explorer includes empty directories and non-DBML filenames; only DBML files are editable. Saves are explicit with content-version conflict checks, path containment, and symlink checks. Do not overwrite user buffers or model files incidentally.
+
+Sidebar and editor collapse independently. Theme, panel, and Vim preferences are browser-local. Vim uses monaco-vim 0.4.4 and `:w` invokes the normal safe save flow. Adapter ESM/Monaco import aliases in Vite are required. The native hosts use stdout/stdin picker messages; Quit owns and stops the backend. Windows uses a Job Object. No account/subscription changes are part of routine work.
+
+Keep `Dep` table-level and column-level declarations in separate blocks; the parser rejects mixing edge levels in a block. Each DBML file is a separate diagram. Preserve package provenance and original notices.
+
+## Git and releases
+
+Track source, build/check scripts, tests, examples, docs, this context, and npm manifests/lockfile. Do not track `dist/`, `artifacts/` (downloaded binaries, vendor assets, recovered code, analysis output), `node_modules/`, local secrets, logs, or caches. Upload generated ZIPs as GitHub Release assets. Check redistribution permissions for bundled official renderer/parser assets before public distribution. Do not publish, commit, or upload unless the session authorizes it.

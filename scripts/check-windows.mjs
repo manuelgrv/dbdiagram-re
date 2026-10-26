@@ -1,0 +1,44 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+const project = path.dirname(fileURLToPath(import.meta.url));
+const resources = path.dirname(project);
+process.env.DBDIAGRAM_EXTENSION_DIR = path.join(resources, 'extension');
+process.env.ACORN_PATH = path.join(resources, 'vendor/acorn.cjs');
+const { startStudio } = await import('./src/studio-server.mjs');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'dbml-windows-'));
+let studio;
+try {
+  const first = path.join(temp, 'Workspace with spaces — datos');
+  const second = path.join(temp, 'Second workspace');
+  fs.mkdirSync(first); fs.mkdirSync(second); fs.mkdirSync(path.join(first, 'empty folder'));
+  const source = 'Table source {\n id int [pk]\n}\nTable target {\n id int [pk]\n}\nDep: source.id -> target.id\n';
+  fs.writeFileSync(path.join(first, 'model.dbml'), source);
+  fs.writeFileSync(path.join(second, 'other.dbml'), source);
+  studio = await startStudio({ directory: first, port: 0, pickDirectory: async () => second });
+  const get = async route => { const response = await fetch(studio.url + route); assert.equal(response.status, 200, route); return response; };
+  assert.match(await (await get('/')).text(), /DBML Studio/);
+  assert.match(await (await get('/renderer/')).text(), /studio-bridge/);
+  const listing = await (await get('/api/files')).json();
+  assert.ok(listing.entries.some(e => e.path === 'empty folder' && e.kind === 'directory'));
+  const document = await (await get('/api/file?path=model.dbml')).json();
+  const post = (route, method, body, token = studio.token) => fetch(studio.url + route, { method, headers: { 'Content-Type': 'application/json', 'X-Workspace-Token': token }, body: JSON.stringify(body) });
+  const preview = await (await post('/api/preview', 'POST', { path: 'model.dbml', source })).json();
+  assert.deepEqual(preview.update.errors, []);
+  assert.equal(preview.stats.tables, 2); assert.equal(preview.stats.lineage, 1);
+  const saved = source + '// saved by portable smoke check\n';
+  assert.equal((await post('/api/file?path=model.dbml', 'PUT', { source: saved, version: document.version })).status, 200);
+  assert.equal(fs.readFileSync(path.join(first, 'model.dbml'), 'utf8'), saved);
+  const originalToken = studio.token;
+  assert.equal((await post('/api/workspace/open', 'POST', {})).status, 200);
+  assert.equal(studio.workspace.root, fs.realpathSync(second));
+  assert.notEqual(studio.token, originalToken);
+  assert.equal((await post('/api/file?path=wrong.dbml', 'POST', {}, originalToken)).status, 403);
+  console.log('PASS: portable backend, Unicode/space paths, explorer, lineage, safe save, native-picker callback, workspace switch, and stale-token rejection.');
+  console.log('Platform: ' + process.platform + '/' + process.arch + '. Tray and native dialog UI require a manual Windows check.');
+} finally {
+  await studio?.close();
+  fs.rmSync(temp, { recursive: true, force: true });
+}

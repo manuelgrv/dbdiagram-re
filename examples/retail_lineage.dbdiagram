@@ -1,0 +1,356 @@
+{
+  "version": "3.0.0",
+  "darkMode": true,
+  "gridEnabling": false,
+  "currentViewName": null,
+  "defaultView": {
+    "detailLevel": "All",
+    "relationshipMode": "Dependency",
+    "tablePositions": [
+      {
+        "name": "customers",
+        "schemaName": "source",
+        "x": 16,
+        "y": 1304
+      },
+      {
+        "name": "orders",
+        "schemaName": "source",
+        "x": 512,
+        "y": 536
+      },
+      {
+        "name": "order_items",
+        "schemaName": "source",
+        "x": 512,
+        "y": 752
+      },
+      {
+        "name": "dim_customer",
+        "schemaName": "warehouse",
+        "x": 1120,
+        "y": 1352
+      },
+      {
+        "name": "fact_sales",
+        "schemaName": "warehouse",
+        "x": 1744,
+        "y": 592
+      },
+      {
+        "name": "daily_revenue",
+        "schemaName": "reporting",
+        "x": 2960,
+        "y": 448
+      },
+      {
+        "name": "products",
+        "schemaName": "source",
+        "x": 16,
+        "y": 1672
+      },
+      {
+        "name": "payments",
+        "schemaName": "source",
+        "x": 512,
+        "y": 1032
+      },
+      {
+        "name": "refunds",
+        "schemaName": "source",
+        "x": 1120,
+        "y": 32
+      },
+      {
+        "name": "stg_customers",
+        "schemaName": "staging",
+        "x": 512,
+        "y": 1328
+      },
+      {
+        "name": "stg_products",
+        "schemaName": "staging",
+        "x": 512,
+        "y": 1672
+      },
+      {
+        "name": "stg_sales_lines",
+        "schemaName": "staging",
+        "x": 1120,
+        "y": 608
+      },
+      {
+        "name": "stg_payments",
+        "schemaName": "staging",
+        "x": 1120,
+        "y": 1032
+      },
+      {
+        "name": "stg_refunds",
+        "schemaName": "staging",
+        "x": 1744,
+        "y": 64
+      },
+      {
+        "name": "dim_product",
+        "schemaName": "warehouse",
+        "x": 1120,
+        "y": 1664
+      },
+      {
+        "name": "fact_payments",
+        "schemaName": "warehouse",
+        "x": 1744,
+        "y": 1048
+      },
+      {
+        "name": "fact_refunds",
+        "schemaName": "warehouse",
+        "x": 2344.402271359053,
+        "y": 736.0707115085568
+      },
+      {
+        "name": "product_performance",
+        "schemaName": "reporting",
+        "x": 2960,
+        "y": 1232
+      },
+      {
+        "name": "customer_value",
+        "schemaName": "reporting",
+        "x": 2960,
+        "y": 856
+      }
+    ],
+    "tableGroupCollapseStates": [],
+    "stickyNoteLayouts": [],
+    "referencePaths": [
+      {
+        "firstFieldNames": [
+          "customer_id"
+        ],
+        "firstTableName": "orders",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "customer_id"
+        ],
+        "secondTableName": "customers",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "order_id"
+        ],
+        "firstTableName": "order_items",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "order_id"
+        ],
+        "secondTableName": "orders",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "customer_key"
+        ],
+        "firstTableName": "fact_sales",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "customer_key"
+        ],
+        "secondTableName": "dim_customer",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "product_id"
+        ],
+        "firstTableName": "order_items",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "product_id"
+        ],
+        "secondTableName": "products",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "order_id"
+        ],
+        "firstTableName": "payments",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "order_id"
+        ],
+        "secondTableName": "orders",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "order_item_id"
+        ],
+        "firstTableName": "refunds",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "order_item_id"
+        ],
+        "secondTableName": "order_items",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "payment_id"
+        ],
+        "firstTableName": "refunds",
+        "firstSchemaName": "source",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "payment_id"
+        ],
+        "secondTableName": "payments",
+        "secondSchemaName": "source",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "product_key"
+        ],
+        "firstTableName": "fact_sales",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "product_key"
+        ],
+        "secondTableName": "dim_product",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "customer_key"
+        ],
+        "firstTableName": "fact_payments",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "customer_key"
+        ],
+        "secondTableName": "dim_customer",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "source_order_item_id"
+        ],
+        "firstTableName": "fact_refunds",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "source_order_item_id"
+        ],
+        "secondTableName": "fact_sales",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "source_payment_id"
+        ],
+        "firstTableName": "fact_refunds",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "source_payment_id"
+        ],
+        "secondTableName": "fact_payments",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "customer_key"
+        ],
+        "firstTableName": "fact_refunds",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "customer_key"
+        ],
+        "secondTableName": "dim_customer",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "product_key"
+        ],
+        "firstTableName": "fact_refunds",
+        "firstSchemaName": "warehouse",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "product_key"
+        ],
+        "secondTableName": "dim_product",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "product_key"
+        ],
+        "firstTableName": "product_performance",
+        "firstSchemaName": "reporting",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "product_key"
+        ],
+        "secondTableName": "dim_product",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "customer_key"
+        ],
+        "firstTableName": "customer_value",
+        "firstSchemaName": "reporting",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "customer_key"
+        ],
+        "secondTableName": "dim_customer",
+        "secondSchemaName": "warehouse",
+        "secondRelation": "1",
+        "checkPoints": []
+      }
+    ]
+  },
+  "views": {}
+}

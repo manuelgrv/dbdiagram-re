@@ -1,0 +1,16 @@
+Table app.customers [headercolor: #3B82F6] {
+  customer_id bigint [pk]
+  email varchar(255)
+}
+
+Table analytics.customers [headercolor: #10B981] {
+  customer_id bigint [pk]
+  email varchar(255)
+}
+
+Dep: app.customers -> analytics.customers
+Dep customer_mapping {
+  app.customers.customer_id -> analytics.customers.customer_id
+  app.customers.email -> analytics.customers.email
+  note: 'A live-editing example created in DBML Studio.'
+}
