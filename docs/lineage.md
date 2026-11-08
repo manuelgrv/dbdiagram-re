@@ -1,5 +1,7 @@
 # DBML parser and lineage
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 The 0.4.0 manifest declares `@dbml/core` 10.1.1. The parser harness loads the actual bundled parser and calls its `dbmlv2` mode. It does not approximate DBML with regular expressions.
 
 ## Normalized representation

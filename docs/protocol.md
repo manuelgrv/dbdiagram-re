@@ -1,5 +1,7 @@
 # Extension-host / webview protocol
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 Recovered from the host constants, `resolveCustomTextEditor`, and the renderer application's final message listener. Directions below are from the perspective of the extension host. This is a description of observed payloads, not a published compatibility promise.
 
 ## Host to webview

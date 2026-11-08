@@ -34,3 +34,6 @@ Desktop.ini
 !/downloads/README.md
 !/downloads/SHA256SUMS.txt
 !/downloads/DBML-Studio-windows-x64.zip
+
+# Recoverable workspace trash
+.dbml-studio-trash/

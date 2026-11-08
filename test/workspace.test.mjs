@@ -113,3 +113,180 @@ test('workspace switching broadcasts root changes and watches new directories an
         assert.ok(listing.entries.some(e => e.path === 'new-empty-directory'));
     } finally { clearTimeout(timeout); await reader.cancel(); }
 });
+
+
+test('explorer moves and renames regular files without overwriting destinations', t => {
+    const ws = new Workspace(fixture(t)), doc = ws.read('one.dbml');
+    const version = name => ws.files().entries.find(e => e.path === name).version;
+    const moved = ws.move('one.dbml', 'nested/renamed.dbml', version('one.dbml'));
+    assert.equal(moved.destination, 'nested/renamed.dbml');
+    assert.equal(ws.read(moved.destination).source, doc.source);
+    assert.ok(!fs.existsSync(path.join(ws.root, 'one.dbml')));
+    assert.throws(() => ws.move(moved.destination, 'nested/two.dbml', moved.version), e => e.status === 409);
+    assert.throws(() => ws.move(moved.destination, 'renamed.txt', moved.version), e => e.status === 400);
+    assert.equal(ws.read('nested/two.dbml').source, 'Table two {\n id int [pk]\n}\n');
+    fs.writeFileSync(path.join(ws.root, 'notes.txt'), 'notes');
+    ws.move('notes.txt', 'nested/notes.txt', version('notes.txt'));
+    assert.equal(fs.readFileSync(path.join(ws.root, 'nested/notes.txt'), 'utf8'), 'notes');
+    const latest = version(moved.destination);
+    fs.writeFileSync(path.join(ws.root, moved.destination), 'external edit');
+    assert.throws(() => ws.move(moved.destination, 'stale.dbml', latest), e => e.status === 409);
+    assert.throws(() => ws.trash(moved.destination, latest), e => e.status === 409);
+});
+
+test('workspace trash keeps recoverable files and original paths outside discovery', t => {
+    const ws = new Workspace(fixture(t)), source = ws.read('one.dbml').source;
+    const version = ws.files().entries.find(e => e.path === 'one.dbml').version;
+    const result = ws.trash('one.dbml', version);
+    assert.ok(!fs.existsSync(path.join(ws.root, 'one.dbml')));
+    assert.equal(fs.readFileSync(path.join(ws.root, result.trashPath), 'utf8'), source);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(ws.root, result.trashPath, '..', '..', 'restore.json'), 'utf8')).path, 'one.dbml');
+    assert.ok(ws.files().entries.every(e => !e.path.startsWith('.dbml-studio-trash')));
+    fs.writeFileSync(path.join(ws.root, 'restore.json'), 'user data');
+    const metadataFile = ws.files().entries.find(e => e.path === 'restore.json');
+    const metadataResult = ws.trash(metadataFile.path, metadataFile.version);
+    assert.equal(fs.readFileSync(path.join(ws.root, metadataResult.trashPath), 'utf8'), 'user data');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(ws.root, metadataResult.trashPath, '..', '..', 'restore.json'), 'utf8')).path, 'restore.json');
+});
+
+test('explorer mutations reject hidden paths, traversal, directories, and symlink ancestors', t => {
+    const ws = new Workspace(fixture(t));
+    const version = ws.files().entries.find(e => e.path === 'one.dbml').version;
+    for (const destination of ['../escape.dbml', '/tmp/escape.dbml', '.hidden.dbml', 'dist/escape.dbml', 'nested/../escape.dbml', 'nested\\escape.dbml'])
+        assert.throws(() => ws.move('one.dbml', destination, version));
+    assert.throws(() => ws.trash('nested', version), e => e.status === 403);
+    fs.symlinkSync(path.join(ws.root, 'nested'), path.join(ws.root, 'alias'));
+    assert.throws(() => ws.move('one.dbml', 'alias/escape.dbml', version), e => e.status === 403);
+    assert.throws(() => ws.trash('alias/two.dbml', version), e => e.status === 403);
+    fs.symlinkSync(path.join(ws.root, 'missing'), path.join(ws.root, 'dangling.dbml'));
+    assert.throws(() => ws.move('one.dbml', 'dangling.dbml', version), e => e.status === 409);
+    fs.symlinkSync(path.join(ws.root, 'nested'), path.join(ws.root, '.dbml-studio-trash'));
+    assert.throws(() => ws.trash('one.dbml', version), e => e.status === 403);
+    assert.ok(ws.read('one.dbml').source);
+});
+
+test('explorer mutation API requires a token, preserves collisions, and broadcasts moves and trash', async t => {
+    const studio = await studioFixture(t);
+    const version = studio.workspace.files().entries.find(e => e.path === 'one.dbml').version;
+    const data = { path: 'one.dbml', destination: 'nested/new.dbml', version };
+    assert.equal((await request(studio, '/api/files/move', 'POST', data, 'invalid')).status, 403);
+    assert.equal((await request(studio, '/api/files/trash', 'POST', data, 'invalid')).status, 403);
+    assert.equal((await request(studio, '/api/files/move', 'POST', { ...data, destination: 'nested/two.dbml' })).status, 409);
+    const response = await fetch(studio.url + '/api/workspace/events'), reader = response.body.getReader();
+    await reader.read();
+    const timeout = setTimeout(() => reader.cancel(), 3000);
+    try {
+        const moved = await request(studio, '/api/files/move', 'POST', data);
+        assert.equal(moved.status, 200);
+        assert.match(new TextDecoder().decode((await reader.read()).value), /"type":"moved"/);
+        const current = await moved.json();
+        assert.equal((await request(studio, '/api/files/trash', 'POST', { path: current.destination, version: current.version })).status, 200);
+        assert.match(new TextDecoder().decode((await reader.read()).value), /"type":"trashed"/);
+        assert.equal((await fetch(studio.url + '/api/file?path=nested/new.dbml')).status, 404);
+    } finally { clearTimeout(timeout); await reader.cancel(); }
+});
+
+
+test('workspace creates nested directories exclusively and rejects unsafe paths', t => {
+    const ws = new Workspace(fixture(t));
+    assert.equal(ws.createDirectory('empty').path, 'empty');
+    ws.createDirectory('empty/child');
+    assert.ok(ws.files().entries.some(e => e.path === 'empty/child' && e.kind === 'directory'));
+    for (const name of ['empty', 'one.dbml']) assert.throws(() => ws.createDirectory(name), e => e.status === 409);
+    for (const name of ['', '../escape', '.hidden', 'dist/folder', 'nested/../escape', '/tmp/escape']) assert.throws(() => ws.createDirectory(name));
+    fs.symlinkSync(path.join(ws.root, 'empty'), path.join(ws.root, 'alias'));
+    assert.throws(() => ws.createDirectory('alias/escape'), e => e.status === 403);
+});
+
+test('folder trash preserves nested and hidden contents and never follows contained symlinks', t => {
+    const ws = new Workspace(fixture(t));
+    ws.createDirectory('nested/child');
+    fs.writeFileSync(path.join(ws.root, 'nested/child/notes.txt'), 'notes');
+    fs.writeFileSync(path.join(ws.root, 'nested/.hidden'), 'hidden');
+    fs.symlinkSync(path.join(ws.root, 'one.dbml'), path.join(ws.root, 'nested/link'));
+    const info = ws.directoryInfo('nested');
+    assert.equal(info.count, 5);
+    const result = ws.trash('nested', info.version, { directory: true });
+    assert.equal(result.kind, 'directory');
+    assert.ok(!fs.existsSync(path.join(ws.root, 'nested')));
+    assert.equal(fs.readFileSync(path.join(ws.root, result.trashPath, '.hidden'), 'utf8'), 'hidden');
+    assert.equal(fs.readFileSync(path.join(ws.root, result.trashPath, 'child/notes.txt'), 'utf8'), 'notes');
+    assert.ok(fs.lstatSync(path.join(ws.root, result.trashPath, 'link')).isSymbolicLink());
+    assert.ok(ws.read('one.dbml').source);
+    for (const name of ['', '.', '../outside', '.dbml-studio-trash', 'one.dbml']) assert.throws(() => ws.directoryInfo(name));
+});
+
+test('folder trash rejects changes to descendants and newly added hidden files', t => {
+    const ws = new Workspace(fixture(t));
+    const info = ws.directoryInfo('nested');
+    fs.writeFileSync(path.join(ws.root, 'nested/two.dbml'), 'external change');
+    assert.throws(() => ws.trash('nested', info.version, { directory: true }), e => e.status === 409);
+    const next = ws.directoryInfo('nested');
+    fs.writeFileSync(path.join(ws.root, 'nested/.hidden'), 'new');
+    assert.throws(() => ws.trash('nested', next.version, { directory: true }), e => e.status === 409);
+    assert.ok(fs.existsSync(path.join(ws.root, 'nested/two.dbml')));
+});
+
+test('directory API creates and recursively trashes folders with token and snapshot checks', async t => {
+    const studio = await studioFixture(t);
+    assert.equal((await request(studio, '/api/directories', 'POST', { path: 'new' }, 'bad')).status, 403);
+    assert.equal((await request(studio, '/api/directories', 'POST', { path: 'new' })).status, 201);
+    assert.equal((await request(studio, '/api/directories', 'POST', { path: 'new' })).status, 409);
+    const info = await (await fetch(studio.url + '/api/directory?path=nested')).json();
+    assert.equal(info.count, 1);
+    assert.equal((await request(studio, '/api/directories/trash', 'POST', { path: '', version: info.version })).status, 400);
+    assert.equal((await request(studio, '/api/directories/trash', 'POST', { path: 'nested', version: info.version }, 'bad')).status, 403);
+    const response = await fetch(studio.url + '/api/workspace/events'), reader = response.body.getReader();
+    await reader.read();
+    const timeout = setTimeout(() => reader.cancel(), 3000);
+    try {
+        assert.equal((await request(studio, '/api/directories/trash', 'POST', { path: 'nested', version: 'stale' })).status, 409);
+        assert.equal((await request(studio, '/api/directories/trash', 'POST', { path: 'nested', version: info.version })).status, 200);
+        const event = new TextDecoder().decode((await reader.read()).value);
+        assert.match(event, /"kind":"directory"/);
+        assert.match(event, /"type":"trashed"/);
+        assert.equal((await fetch(studio.url + '/api/file?path=nested/two.dbml')).status, 404);
+    } finally { clearTimeout(timeout); await reader.cancel(); }
+});
+
+
+test('folder rename preserves descendants and rejects collisions and stale snapshots', t => {
+    const ws = new Workspace(fixture(t));
+    fs.writeFileSync(path.join(ws.root, 'nested/.hidden'), 'hidden');
+    fs.symlinkSync(path.join(ws.root, 'one.dbml'), path.join(ws.root, 'nested/link'));
+    const info = ws.directoryInfo('nested');
+    ws.createDirectory('taken');
+    for (const destination of ['taken', 'one.dbml']) assert.throws(() => ws.renameDirectory('nested', destination, info.version), e => e.status === 409);
+    assert.throws(() => ws.renameDirectory('nested', '../escape', info.version));
+    assert.throws(() => ws.renameDirectory('nested', 'nested/child', info.version));
+    assert.throws(() => ws.renameDirectory('', 'root', info.version));
+    assert.throws(() => ws.renameDirectory('nested', 'renamed', 'stale'), e => e.status === 409);
+    const result = ws.renameDirectory('nested', 'renamed', info.version);
+    assert.equal(result.kind, 'directory');
+    assert.ok(!fs.existsSync(path.join(ws.root, 'nested')));
+    assert.ok(ws.read('renamed/two.dbml').source);
+    assert.equal(fs.readFileSync(path.join(ws.root, 'renamed/.hidden'), 'utf8'), 'hidden');
+    assert.ok(fs.lstatSync(path.join(ws.root, 'renamed/link')).isSymbolicLink());
+    assert.ok(ws.read('one.dbml').source);
+    const current = ws.directoryInfo('renamed');
+    fs.writeFileSync(path.join(ws.root, 'renamed/two.dbml'), 'external');
+    assert.throws(() => ws.renameDirectory('renamed', 'again', current.version), e => e.status === 409);
+});
+
+test('directory rename API requires a token and broadcasts descendant path remapping', async t => {
+    const studio = await studioFixture(t), info = studio.workspace.directoryInfo('nested');
+    const data = { path: 'nested', destination: 'renamed', version: info.version };
+    assert.equal((await request(studio, '/api/directories/rename', 'POST', data, 'bad')).status, 403);
+    const response = await fetch(studio.url + '/api/workspace/events'), reader = response.body.getReader();
+    await reader.read();
+    const timeout = setTimeout(() => reader.cancel(), 3000);
+    try {
+        assert.equal((await request(studio, '/api/directories/rename', 'POST', data)).status, 200);
+        const event = new TextDecoder().decode((await reader.read()).value);
+        assert.match(event, /"type":"moved"/);
+        assert.match(event, /"kind":"directory"/);
+        assert.match(event, /"destination":"renamed"/);
+        assert.equal((await fetch(studio.url + '/api/file?path=renamed/two.dbml')).status, 200);
+        assert.equal((await fetch(studio.url + '/api/file?path=nested/two.dbml')).status, 404);
+    } finally { clearTimeout(timeout); await reader.cancel(); }
+});

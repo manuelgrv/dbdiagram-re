@@ -1,5 +1,5 @@
 (() => {
-    let ready = false, current = null, pending = null;
+    let ready = false, current = null, pending = null, exporting = false;
     const parentMessage = data => window.parent.postMessage(data, location.origin);
     const emit = data => window.dispatchEvent(new MessageEvent('message', { data, origin: location.origin }));
     function apply(snapshot) {
@@ -45,8 +45,25 @@
             return;
         if (event.data?.type === 'studio:snapshot')
             apply(event.data.snapshot);
-        if (event.data?.type === 'studio:theme')
+        if (event.data?.type === 'studio:theme') {
+            if (current) current.theme = event.data.theme;
             emit({ type: 'themeChange', isDark: event.data.theme === 'dark' });
+        }
+        if (event.data?.type === 'studio:export') {
+            const request = event.data;
+            (async () => {
+                let ownsExport = false;
+                try {
+                    if (exporting) throw new Error('An image export is already running.');
+                    if (!current || current.fileId !== request.fileId) throw new Error('The diagram changed. Try exporting again.');
+                    exporting = true; ownsExport = true;
+                    const { captureDiagram } = await import('/diagram-export.mjs');
+                    const result = await captureDiagram(window, { format: request.format, scope: request.scope, scale: request.scale, theme: current.theme });
+                    parentMessage({ type: 'studio:exported', requestId: request.requestId, ...result });
+                } catch (error) { parentMessage({ type: 'studio:exported', requestId: request.requestId, error: error.message }); }
+                finally { if (ownsExport) exporting = false; }
+            })();
+        }
     });
     window.addEventListener('error', e => parentMessage({ type: 'studio:error', message: e.message }));
     window.addEventListener('unhandledrejection', e => parentMessage({ type: 'studio:error', message: e.reason?.message ?? String(e.reason) }));

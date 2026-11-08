@@ -13,7 +13,7 @@ export function compileFile(file, runtime) {
     const workspace = new Workspace(projectRootForFile(absolute));
     return compileWorkspace(runtime, workspace, workspace.relative(absolute));
 }
-export function compileWorkspace(runtime, workspace, entry, source, buffers = []) {
+export function workspaceSources(workspace, entry, source, buffers = []) {
     workspace.resolve(entry);
     if (!Array.isArray(buffers) || buffers.length > 2000) throw new WorkspaceError(400, 'Invalid unsaved module buffers');
     const overrides = new Map();
@@ -34,6 +34,12 @@ export function compileWorkspace(runtime, workspace, entry, source, buffers = []
         if (bytes > maxProjectBytes) throw new WorkspaceError(413, 'Workspace DBML sources exceed 64 MB. Choose a smaller workspace.');
         return [virtualRoot + file.path, text];
     });
+    return sources;
+}
+export function compileWorkspace(runtime, workspace, entry, source, buffers = []) {
+    return compileSources(runtime, entry, workspaceSources(workspace, entry, source, buffers));
+}
+export function compileSources(runtime, entry, sources) {
     try { return runtime.compileProject(virtualRoot + entry.split(path.sep).join('/'), sources); }
     catch (error) {
         if (error.diags) error.diags = error.diags.map(diag => ({ ...diag, path: diag.filepath?.startsWith(virtualRoot) ? diag.filepath.slice(virtualRoot.length) : entry }));

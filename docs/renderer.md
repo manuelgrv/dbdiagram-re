@@ -1,5 +1,7 @@
 # Renderer and version regression
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 ## 0.4.0 application
 
 The webview entry is a Vite-style ES module. The application uses Vue components and Pinia stores for the model, features, VS Code bridge, and diagram views. The manifest lists `@holistics/dbrenderer` 8.1.2 as a development dependency and `dbrenderer-webview` as a workspace dependency; the actual renderer code is bundled into the webview assets.

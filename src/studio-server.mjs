@@ -1,4 +1,5 @@
-import { compileWorkspace } from './dbml-project.mjs';
+import { projectLanguage } from './dbml-language.mjs';
+import { compileSources, workspaceSources } from './dbml-project.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -101,6 +102,13 @@ export async function startStudio({ directory = process.cwd(), port = 4174, vers
             }
             if (url.pathname === '/api/directories' && req.method === 'GET')
                 return send(res, 200, workspace.directories(relative));
+            if (url.pathname === '/api/directory' && req.method === 'GET')
+                return send(res, 200, workspace.directoryInfo(relative));
+            if (url.pathname === '/api/directories' && req.method === 'POST') {
+                const data = await body(req), created = workspace.createDirectory(data.path);
+                broadcast(null);
+                return send(res, 201, created);
+            }
             if (url.pathname === '/api/files' && req.method === 'GET')
                 return send(res, 200, workspace.files(relative));
             if (url.pathname === '/api/file' && req.method === 'GET')
@@ -115,20 +123,31 @@ export async function startStudio({ directory = process.cwd(), port = 4174, vers
                 broadcast(created.path);
                 return send(res, 201, document(created.path));
             }
+            if (['/api/files/move', '/api/files/trash', '/api/directories/trash', '/api/directories/rename'].includes(url.pathname) && req.method === 'POST') {
+                const data = await body(req);
+                const result = url.pathname === '/api/directories/rename' ? workspace.renameDirectory(data.path, data.destination, data.version) : url.pathname.endsWith('/move')
+                    ? workspace.move(data.path, data.destination, data.version)
+                    : workspace.trash(data.path, data.version, { directory: url.pathname === '/api/directories/trash' });
+                const event = { type: result.destination ? 'moved' : 'trashed', ...result };
+                for (const client of clients) client.write('data: ' + JSON.stringify(event) + '\n\n');
+                return send(res, 200, result);
+            }
             if (url.pathname === '/api/preview' && req.method === 'POST') {
                 const data = await body(req, 16 * 1024 * 1024);
                 workspace.resolve(data.path);
                 if (typeof data.source !== 'string' || Buffer.byteLength(data.source) > 2 * 1024 * 1024)
                     throw new WorkspaceError(413, 'DBML files must be smaller than 2 MB');
+                const sources = workspaceSources(workspace, data.path, data.source, data.buffers);
+                const language = projectLanguage(data.path, sources);
                 let database = {}, diagramViews = [], errors = [];
                 try {
-                    ({ database, diagramViews } = compileWorkspace(runtime, workspace, data.path, data.source, data.buffers));
+                    ({ database, diagramViews } = compileSources(runtime, data.path, sources));
                 }
                 catch (error) {
                     if (error instanceof WorkspaceError) throw error;
                     errors = (error.diags ?? [{ message: error.message }]).map(e => ({ path: e.path ?? data.path, message: e.message ?? e.diagnostic ?? String(e), startLine: e.location?.start?.line ?? 1, startColumn: e.location?.start?.column ?? 1, endLine: e.location?.end?.line ?? 1, endColumn: e.location?.end?.column ?? 1 }));
                 }
-                return send(res, 200, { path: data.path, requestId: data.requestId, update: { type: 'update', database, diagramViews: diagramViews ?? [], errors, dbmlSource: data.source }, stats: { tables: Object.keys(database.tables ?? {}).length, lineage: Object.keys(database.depEdges ?? {}).length, relationships: Object.keys(database.refs ?? {}).length } });
+                return send(res, 200, { path: data.path, requestId: data.requestId, language, update: { type: 'update', database, diagramViews: diagramViews ?? [], errors, dbmlSource: data.source }, stats: { tables: Object.keys(database.tables ?? {}).length, lineage: Object.keys(database.depEdges ?? {}).length, relationships: Object.keys(database.refs ?? {}).length } });
             }
             if (url.pathname === '/api/workspace/events' && req.method === 'GET') {
                 res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
@@ -139,6 +158,8 @@ export async function startStudio({ directory = process.cwd(), port = 4174, vers
             }
             if (url.pathname === '/health')
                 return send(res, 200, { ok: true, kind: 'studio', workspace: path.basename(workspace.root) });
+            if (url.pathname === '/diagram-export.mjs')
+                return send(res, 200, fs.readFileSync(path.join(project, 'web/diagram-export.mjs'), 'utf8'), 'text/javascript; charset=utf-8');
             if (url.pathname === '/studio-bridge.js')
                 return send(res, 200, fs.readFileSync(path.join(project, 'web/studio-bridge.js'), 'utf8'), 'text/javascript; charset=utf-8');
             if (url.pathname === '/renderer/' || url.pathname === '/renderer') {

@@ -1,5 +1,7 @@
 # Authentication and network boundary
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 Recovered from the authentication provider, loopback server, and feature manager. This analysis examines code and synthetic fixtures; no account secrets were read and no account API was contacted by the project.
 
 ## Sign-in path

@@ -2,27 +2,36 @@
 
 A local DBML workspace with a Monaco code editor, directory explorer, live diagrams, safe saves, and synchronized light/dark themes. The project also includes a rendering CLI and reproducible analysis of the official dbdiagram extension.
 
+For resuming development, read [the handoff](docs/handoff.md) and [agent context](AGENTS.md).
+
 ## Editing workspace
 
 ```sh
 npm ci
+# Skip if the official 0.4.0 assets are already installed/discovered:
+python3 scripts/fetch_reference.py 0.4.0
 npm run build
-npm run studio -- .. --port 4174
+npm run studio -- examples --port 4174
 ```
 
-Open `http://127.0.0.1:4174`. Pass any directory you want to work in instead of `..`. Use **Open folder** to choose a new workspace anywhere on your Mac, without restarting. Other operating systems show an absolute directory path field. The explorer shows the workspace root, expandable directories (including empty ones), and files, excluding hidden, generated, and vendor content. DBML files open in the editor; other filenames are visible but disabled. Each open file is an entrypoint: files without imports remain independent, while `use`/`reuse` combine the modules imported by that entrypoint. Merely placing files together does not merge them.
+Open `http://127.0.0.1:4174`. Run these commands from the repository root with Node.js 22.12+ and Python 3 for the optional downloader (`py -3` on Windows). Pass any directory you want to work in instead of `examples`. Use **Open folder** to choose a new workspace without restarting. Packaged macOS and Windows apps use their native directory pickers; macOS CLI mode also has a native picker, while plain Windows CLI mode uses an absolute directory path field. The explorer shows the workspace root, expandable directories (including empty ones), and files, excluding hidden, generated, and vendor content. DBML files open in the editor; other filenames are visible but disabled. Each open file is an entrypoint: files without imports remain independent, while `use`/`reuse` combine the modules imported by that entrypoint. Merely placing files together does not merge them.
 
+- Workspace controls live in the sidebar; the editor and diagram start at the top of the window. When the sidebar is hidden, restore it with the sidebar button in the bottom status bar.
 - Open files in tabs with independent undo history and cursor/scroll state.
-- Edit in Monaco with DBML highlighting, snippets, search, and clickable compiler diagnostics.
+- Edit in Monaco with DBML highlighting, context-aware completion, snippets, search, hover information, and clickable compiler diagnostics. Use `Ctrl+Space` for suggestions (keywords, SQL types, settings, tables, aliases, columns, enums, partials, and module paths).
+- Fold objects with the gutter arrows, including tables, enums, groups, lineage/reference blocks, nested indexes, multiline notes, and comments. Use `Cmd/Ctrl+Shift+O` for the symbol outline, `F12` for DBML definitions (including imported files), or `Cmd/Ctrl+Shift+P` for editor commands. Completion includes dirty module buffers and continues while code is incomplete.
 - Preview unsaved changes automatically after a short debounce. The last valid diagram remains visible while fixing syntax errors.
 - Save with **Save** or `Cmd/Ctrl+S`. External changes reload clean buffers; dirty buffers show a conflict instead of being overwritten.
+- Create folders with **New folder** in the explorer header, or the **⋯** menu on a folder. The folder menu also offers **Rename folder** (preserving open buffers and undo history) and **Trash folder and contents**, including nested and hidden entries, with confirmation for unsaved edits. The workspace root cannot be trashed.
+- Use each file’s **⋯** menu to rename it, move it to a workspace folder, or trash it. Drag a file onto a folder to choose a move. Open edits and undo history survive renames/moves; DBML import paths must be updated manually. Trash keeps the disk file under `.dbml-studio-trash/` with a `restore.json` recording its original path; recover it by moving the file back with your system file manager.
 - Create `.dbml` files with **New diagram**. Closing a dirty tab or switching folders asks before discarding edits.
-- Switch **Light mode / Dark mode** in the header. The preference applies to Monaco, the interface, and the diagram and persists in the browser.
-- Use **Sidebar** and **Editor** in the header to collapse either panel independently, or hide both for a diagram-only workspace. The choices persist in your browser; restoring the editor keeps its unsaved buffer, undo history, and split width.
-- Toggle **Vim on / Vim off** in the header for modal editing. The preference persists; a status indicator shows Normal/Insert/Visual mode, and `:w` saves the current diagram.
+- Switch **Light mode / Dark mode** in the sidebar. The preference applies to Monaco, the interface, and the diagram and persists in the browser.
+- Use **Sidebar** and **Editor** in the sidebar to collapse either panel independently, or hide both for a diagram-only workspace. The choices persist in your browser; restoring the editor keeps its unsaved buffer, undo history, and split width.
+- Toggle **Vim on / Vim off** in the sidebar for modal editing. The preference persists; a status indicator shows Normal/Insert/Visual mode, and `:w` saves the current diagram.
+- Use **Export image** in the sidebar to download **PNG** or **JPEG**. Choose **Full diagram** for all displayed objects at native scale with readable labels, or **Visible area** for the current pan/zoom. Choose 1×, 2×, or 3× resolution. Images retain the current layout/theme/detail selection and exclude toolbars; exports use an opaque background. If the source has errors, the last valid displayed graph is exported.
 - Drag the center divider to resize the editor and preview.
 
-The application uses Vite and Monaco, with the original working renderer isolated in an iframe. Local Node APIs read/write only `.dbml` files under the CLI-selected root. The existing `serve` command remains a read-only, single-file viewer.
+The application uses Vite and Monaco, with the original working renderer isolated in an iframe. Local Node APIs read/save only `.dbml` contents under the selected workspace root; explorer operations can rename, move, or trash any visible regular file. The existing `serve` command remains a read-only viewer for one entrypoint, including that entrypoint’s imported modules.
 
 For development with Vite hot reload:
 
@@ -132,7 +141,7 @@ npm run render -- examples/retail_lineage.dbml --level column -o artifacts/colum
 npm run render -- examples/retail_lineage.dbml --links relationships -o artifacts/retail-erd.svg
 ```
 
-Open `http://127.0.0.1:4173` for the interactive diagram. It uses the same bundled JavaScript/CSS renderer as the working extension, with a local adapter for its message protocol. The service watches the DBML file and streams updates; invalid DBML appears in the original error panel. Pan, zoom, arrangement, link-type switching, and column lineage use the original renderer. It reads an existing `.dbdiagram` layout at startup and saves subsequent viewer layout changes in browser local storage. Source editing from the browser is disabled; edit the file in your editor.
+Open `http://127.0.0.1:4173` for the interactive diagram. It uses the same bundled JavaScript/CSS renderer as the working extension, with a local adapter for its message protocol. The service watches the entrypoint and project DBML modules and streams updates; invalid DBML appears in the original error panel. Pan, zoom, arrangement, link-type switching, and column lineage use the original renderer. It reads an existing `.dbdiagram` layout at startup and saves subsequent viewer layout changes in browser local storage. Source editing from the browser is disabled; edit the file in your editor.
 
 The service binds to `127.0.0.1` only. Use `--port 0` for an available port, `--theme light`, or `--links relationships|all`. It uses local display capability flags and does not connect to an account or the subscription API. Some renderer controls that modify DBML are disabled by this read-only host. Stop with Ctrl+C.
 
@@ -161,9 +170,9 @@ node src/cli.mjs trace examples/retail_lineage.dbml source.refunds.amount downst
 
 ## Tool dependencies
 
-The original analysis-only tools needed no package installation on the development machine. The new Studio application requires `npm ci` for the pinned Vite and Monaco dependencies; `package-lock.json` is included. Static extraction uses the Acorn parser bundled with VS Code's JavaScript debugger. Readable printing uses VS Code's bundled TypeScript, when present. Node's built-in test runner runs the tests. The DBML runtime is taken from the installed extension.
+The original analysis-only tools needed no package installation on the development machine. The new Studio application requires `npm ci` for the pinned Vite and Monaco dependencies; `package-lock.json` is included. Static extraction uses the pinned Acorn dependency installed by `npm ci`; the VS Code bundled copy remains a fallback. Readable printing uses VS Code's bundled TypeScript, when present. Node's built-in test runner runs the tests. The DBML runtime is taken from the installed extension.
 
-For another machine, install `acorn` locally or set `ACORN_PATH`; optionally install `typescript` or set `TYPESCRIPT_PATH`. Set `DBDIAGRAM_EXTENSION_DIR` to override extension discovery. Default discovery checks `.vscode`, `.vscode-insiders`, and `.cursor` under the current user's home directory. The explicit directory must have the requested version in its manifest.
+Acorn is included in the lockfile; `ACORN_PATH` can override it. Optionally install `typescript` or set `TYPESCRIPT_PATH` for readable printing. Set `DBDIAGRAM_EXTENSION_DIR` to override extension discovery. Default discovery checks `.vscode`, `.vscode-insiders`, and `.cursor` under the current user's home directory. The explicit directory must have the requested version in its manifest.
 
 This is a tool for the known installed builds, not a universal decompiler. Discovery uses AST parsing plus semantic marker strings and fails when expected structures change. Run tests after changing extension versions.
 
@@ -184,7 +193,7 @@ Start with [the completed-run findings](docs/findings.md).
 
 The parser harness evaluates a prefix of the known local host bundle, stopping before the authentication/HTTP initialization. It permits a listed set of Node modules and supplies an empty VS Code stub. Node's `vm` is an instrumentation context, **not a security sandbox**; only use trusted installed bundles. Parser file APIs may read referenced files. The feature harness evaluates the recovered manager with synthetic sessions, API replies, timers, and events. It never contacts the service or reads account secrets. Tests use the actual recovered manager, not a rewritten approximation.
 
-Both the original viewer and the Monaco workspace were manually verified in Safari. Studio checks included directory selection, file creation, unsaved editing, saving, diagnostics/undo recovery, tab switching, and light/dark synchronization. Generated SVG output was also visually inspected. The 54 automated tests cover HTTP/SSE, recursive directory watching, safe saves and conflicts, unsaved previews, Vite development mode, compiler behavior, SVG generation, and the analysis harnesses; full browser interaction is not yet automated. Cloud implementation and live account behavior remain unverified. See the workspace `AGENTS.md` for current agent context and the evidence document for analysis coverage and limits.
+Both the original viewer and the Monaco workspace were manually verified in Safari. Studio checks included directory selection, file creation, unsaved editing, saving, diagnostics/undo recovery, tab switching, and light/dark synchronization. Generated SVG output was also visually inspected. The latest implementation validation passed all 67 automated tests with no skips, covering HTTP/SSE, recursive directory watching, safe saves and conflicts, unsaved previews, Vite development mode, compiler behavior, SVG generation, the analysis harnesses, Windows PE inspection, and module resolution/unsaved buffers/import diagnostics; full browser interaction is not yet automated. Cloud implementation and live account behavior remain unverified. See the workspace `AGENTS.md` for current agent context and the evidence document for analysis coverage and limits.
 
 ## Archived package comparison
 

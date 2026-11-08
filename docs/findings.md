@@ -1,5 +1,7 @@
 # Findings from the completed run
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 Targets: installed official **0.4.0** and downloaded official **0.5.3**. The latter is a reference package in ignored artifacts; it is not installed or activated by this project.
 
 ## Recovered coverage

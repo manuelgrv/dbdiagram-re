@@ -1,5 +1,7 @@
 # Architecture and behavior
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 The extension has two application components: a Node extension host and a Vue webview. Both are shipped as large minified bundles with many dependencies included. There are no source maps referenced by the inspected entry bundles. Variable names are minified; class method names, property keys, event names, settings, and many strings remain readable.
 
 ```mermaid

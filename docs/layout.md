@@ -1,5 +1,7 @@
 # Saved visual state
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 The host derives the file path by replacing the model's `.dbml` suffix with `.dbdiagram` in the same directory. The extension creates this file to remember the preview layout.
 
 ## Version 3 shape

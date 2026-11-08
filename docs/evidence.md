@@ -1,5 +1,7 @@
 # Evidence and remaining work
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 ## Reproduce evidence
 
 Run `npm run analyze` to create an exact bundle inventory, manifest summary, capability signals, profile differences, application endpoints, and source section offsets/hashes. The analysis is local and reproducible for the installed version. Generated extracted code and model data live in ignored `artifacts/`; they can be recreated and are not original project source.

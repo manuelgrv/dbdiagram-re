@@ -1,5 +1,7 @@
 # Feature controls
 
+> Historical extension-analysis report. For the current application, module support, packaging, and validation status, see [the handoff](handoff.md), [Studio documentation](studio.md), and [README](../README.md).
+
 Source: recovered host feature manager, its two literal feature profiles, and the webview wrapper. Exact symbols and offsets are generated in `artifacts/0.4.0/analysis.json`; readable code is in `recovered/feature.js`, `free.js`, and `pro.js`.
 
 ## Profile differences in 0.4.0
